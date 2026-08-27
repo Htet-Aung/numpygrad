@@ -30,6 +30,12 @@ try:
 except ImportError:
     HAS_PLOTLY = False
 
+try:
+    import scipy.ndimage as ndi
+    HAS_SCIPY = True
+except ImportError:
+    HAS_SCIPY = False
+
 from numpygrad.core.tensor import Tensor, no_grad
 import numpygrad.nn as nn
 import numpygrad.optim as optim
@@ -194,21 +200,24 @@ st.markdown(
 
     /* Top-3 ranking cards */
     .rank-card {
-        background-color: #f8f9fa;
-        border: 1px solid #e9ecef;
-        border-radius: 8px;
-        padding: 10px 14px;
+        background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%);
+        border: 1px solid #334155;
+        border-radius: 10px;
+        padding: 12px 14px;
         text-align: center;
+        margin-bottom: 0.5rem;
     }
     .rank-digit {
-        font-size: 1.6rem;
-        font-weight: 700;
+        font-size: 1.7rem;
+        font-weight: 800;
+        color: #F8FAFC;
         margin: 0;
         line-height: 1.2;
     }
     .rank-prob {
-        font-size: 0.9rem;
-        color: #6c757d;
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: #38BDF8;
         margin: 0;
     }
 
@@ -572,6 +581,22 @@ def get_layer_raw_weights(model: nn.Sequential) -> Dict[str, np.ndarray]:
     return raw_weights
 
 
+def get_model_gradient_norms(model: nn.Module) -> Dict[str, float]:
+    """Captures the L2 norm of every parameter gradient across the model layers."""
+    grad_norms: Dict[str, float] = {}
+    if isinstance(model, nn.Sequential):
+        for layer_idx, layer in enumerate(model):
+            if hasattr(layer, "weight") and layer.weight is not None and layer.weight.grad is not None:
+                grad_norms[f"Layer {layer_idx} ({layer.__class__.__name__}) - weight"] = float(np.linalg.norm(layer.weight.grad))
+            if hasattr(layer, "bias") and layer.bias is not None and layer.bias.grad is not None:
+                grad_norms[f"Layer {layer_idx} ({layer.__class__.__name__}) - bias"] = float(np.linalg.norm(layer.bias.grad))
+    else:
+        for idx, param in enumerate(model.parameters()):
+            if param.grad is not None:
+                grad_norms[f"Param {idx} {list(param.shape)}"] = float(np.linalg.norm(param.grad))
+    return grad_norms
+
+
 # -----------------------------------------------------------------------------
 # Decision Boundary & Training Curves Plotting
 # -----------------------------------------------------------------------------
@@ -587,11 +612,9 @@ def plot_plotly_decision_boundary(
     if not HAS_PLOTLY:
         return None
 
-    x_min, x_max = float(X[:, 0].min() - 0.5), float(X[:, 0].max() + 0.5)
-    y_min, y_max = float(X[:, 1].min() - 0.5), float(X[:, 1].max() + 0.5)
-    
-    grid_x = np.linspace(x_min, x_max, 100).astype(np.float32)
-    grid_y = np.linspace(y_min, y_max, 100).astype(np.float32)
+    # Full-span grid covering the complete visible axis domain
+    grid_x = np.linspace(-2.5, 2.5, 150).astype(np.float32)
+    grid_y = np.linspace(-2.5, 2.5, 150).astype(np.float32)
     xx, yy = np.meshgrid(grid_x, grid_y)
     grid_points = np.c_[xx.ravel(), yy.ravel()].astype(np.float32)
 
@@ -607,7 +630,7 @@ def plot_plotly_decision_boundary(
 
     fig = go.Figure()
 
-    # 1. Decision Boundary Contour Heatmap
+    # 1. Smooth Decision Boundary Surface (No black line banding)
     fig.add_trace(
         go.Contour(
             x=grid_x,
@@ -615,11 +638,42 @@ def plot_plotly_decision_boundary(
             z=Z,
             colorscale="Spectral",
             reversescale=True,
-            opacity=0.82,
-            contours=dict(start=0, end=1, size=0.05, coloring="heatmap"),
-            colorbar=dict(title=dict(text="P(Class 1)", font=dict(size=11, color="white")), tickfont=dict(color="white")),
+            opacity=0.85,
+            showscale=True,
+            contours=dict(
+                start=0.0,
+                end=1.0,
+                size=0.04,
+                coloring="heatmap",
+                showlines=False,
+            ),
+            line=dict(width=0),
+            colorbar=dict(
+                title=dict(text="P(Class 1)", font=dict(size=11, color="white")),
+                tickfont=dict(color="white"),
+            ),
             hoverinfo="x+y+z",
             name="Decision Surface",
+        )
+    )
+
+    # 1b. Clean single threshold contour line at P = 0.5
+    fig.add_trace(
+        go.Contour(
+            x=grid_x,
+            y=grid_y,
+            z=Z,
+            showscale=False,
+            contours=dict(
+                start=0.5,
+                end=0.5,
+                size=0.0,
+                coloring="none",
+                showlines=True,
+            ),
+            line=dict(color="#FFFFFF", width=2, dash="dash"),
+            name="Decision Border (P=0.5)",
+            hoverinfo="skip",
         )
     )
 
@@ -683,8 +737,23 @@ def plot_plotly_decision_boundary(
 
     fig.update_layout(
         title=dict(text=title, font=dict(size=14, color="#F8FAFC")),
-        xaxis=dict(title=dict(text="Feature x1", font=dict(color="#CBD5E1")), tickfont=dict(color="#CBD5E1"), gridcolor="#334155", zeroline=False),
-        yaxis=dict(title=dict(text="Feature x2", font=dict(color="#CBD5E1")), tickfont=dict(color="#CBD5E1"), gridcolor="#334155", zeroline=False),
+        xaxis=dict(
+            title=dict(text="Feature x1", font=dict(color="#CBD5E1")),
+            tickfont=dict(color="#CBD5E1"),
+            gridcolor="#334155",
+            zeroline=False,
+            fixedrange=True,
+            range=[-2.5, 2.5],
+        ),
+        yaxis=dict(
+            title=dict(text="Feature x2", font=dict(color="#CBD5E1")),
+            tickfont=dict(color="#CBD5E1"),
+            gridcolor="#334155",
+            zeroline=False,
+            fixedrange=True,
+            range=[-2.5, 2.5],
+        ),
+        dragmode=False,
         margin=dict(l=20, r=20, t=40, b=20),
         legend=dict(
             orientation="h",
@@ -703,6 +772,55 @@ def plot_plotly_decision_boundary(
     return fig
 
 
+def plot_plotly_gradient_norms(grad_norms: Dict[str, float], title: str = "Layer-by-Layer Gradient Flow Telemetry") -> Optional[Any]:
+    """Generates an interactive horizontal bar chart of gradient L2 norms using Plotly."""
+    if not HAS_PLOTLY or not grad_norms:
+        return None
+
+    names = list(grad_norms.keys())
+    values = list(grad_norms.values())
+
+    fig = go.Figure(
+        go.Bar(
+            x=values,
+            y=names,
+            orientation="h",
+            marker=dict(
+                color=values,
+                colorscale="Viridis",
+                line=dict(color="#38BDF8", width=1.5),
+            ),
+            text=[f"{v:.5f}" for v in values],
+            textposition="auto",
+            hoverinfo="x+y",
+        )
+    )
+
+    fig.update_layout(
+        title=dict(text=title, font=dict(size=13, color="#F8FAFC")),
+        xaxis=dict(
+            title=dict(text="Gradient L2 Norm", font=dict(color="#CBD5E1")),
+            tickfont=dict(color="#CBD5E1"),
+            gridcolor="#334155",
+            zeroline=False,
+            fixedrange=True,
+        ),
+        yaxis=dict(
+            title=dict(text="Parameter / Layer", font=dict(color="#CBD5E1")),
+            tickfont=dict(color="#CBD5E1"),
+            gridcolor="#334155",
+            autorange="reversed",
+            fixedrange=True,
+        ),
+        paper_bgcolor="#0F172A",
+        plot_bgcolor="#0F172A",
+        margin=dict(l=20, r=20, t=35, b=20),
+        height=max(220, len(names) * 35 + 80),
+        dragmode=False,
+    )
+    return fig
+
+
 def plot_dashboard_figures(
     model: nn.Module,
     X: np.ndarray,
@@ -713,10 +831,8 @@ def plot_dashboard_figures(
 ) -> Tuple[plt.Figure, plt.Figure]:
     """Generates two separate figures for the decision boundary and metrics."""
     # 1. Decision Boundary Figure
-    fig_boundary, ax_b = plt.subplots(figsize=(6, 5), dpi=120)
-    x_min, x_max = X[:, 0].min() - 0.5, X[:, 0].max() + 0.5
-    y_min, y_max = X[:, 1].min() - 0.5, X[:, 1].max() + 0.5
-    xx, yy = np.meshgrid(np.linspace(x_min, x_max, 180), np.linspace(y_min, y_max, 180))
+    fig_boundary, ax_b = plt.subplots(figsize=(6, 5), dpi=100, layout="constrained")
+    xx, yy = np.meshgrid(np.linspace(-2.5, 2.5, 120), np.linspace(-2.5, 2.5, 120))
     grid_points = np.c_[xx.ravel(), yy.ravel()].astype(np.float32)
 
     model.eval()
@@ -763,10 +879,9 @@ def plot_dashboard_figures(
     ax_b.set_xlabel("Feature x1", fontsize=10)
     ax_b.set_ylabel("Feature x2", fontsize=10)
     ax_b.grid(True, linestyle=":", alpha=0.4)
-    fig_boundary.tight_layout()
 
     # 2. Loss & Accuracy Progression Figure
-    fig_metrics, ax_loss = plt.subplots(figsize=(6, 5), dpi=120)
+    fig_metrics, ax_loss = plt.subplots(figsize=(6, 5), dpi=100, layout="constrained")
     epochs_range = range(1, len(loss_hist) + 1)
     
     color_loss = "#d9534f"
@@ -787,33 +902,26 @@ def plot_dashboard_figures(
     labels = [l.get_label() for l in lines]
     ax_loss.legend(lines, labels, loc="center right")
     ax_loss.set_title("Loss & Accuracy Convergence", fontsize=11, fontweight="bold")
-    fig_metrics.tight_layout()
 
     return fig_boundary, fig_metrics
 
 
-def plot_gradient_norms(model: nn.Module) -> plt.Figure:
+def plot_gradient_norms(grad_norms: Dict[str, float]) -> plt.Figure:
     """Plots a layer-by-layer gradient norm diagnostic bar chart."""
-    fig, ax = plt.subplots(figsize=(10, 3.5), dpi=120)
-    layer_names = []
-    grad_norms = []
+    fig, ax = plt.subplots(figsize=(8, max(2.5, len(grad_norms) * 0.45 + 1.0)), dpi=100, layout="constrained")
+    names = list(grad_norms.keys())
+    values = list(grad_norms.values())
 
-    for idx, p in enumerate(model.parameters()):
-        name = f"Param {idx} {p.data.shape}"
-        norm = float(np.linalg.norm(p.grad)) if p.grad is not None else 0.0
-        layer_names.append(name)
-        grad_norms.append(norm)
-
-    bars = ax.barh(layer_names, grad_norms, color="#5bc0de", edgecolor="#0275d8", alpha=0.85)
-    ax.set_xlabel("Gradient L2 Norm", fontweight="bold")
-    ax.set_title("Layer-by-Layer Gradient Magnitude Diagnostic", fontsize=11, fontweight="bold")
-    ax.grid(True, linestyle=":", alpha=0.5, axis="x")
+    bars = ax.barh(names, values, color="#38BDF8", edgecolor="#0284C7", alpha=0.85)
+    ax.set_xlabel("Gradient L2 Norm", fontweight="bold", fontsize=9)
+    ax.set_title("Layer-by-Layer Gradient Magnitude Diagnostic", fontsize=10, fontweight="bold")
+    ax.grid(True, linestyle=":", alpha=0.4, axis="x")
+    ax.invert_yaxis()
 
     for bar in bars:
         width = bar.get_width()
-        ax.text(width + 0.001, bar.get_y() + bar.get_height() / 2, f"{width:.4f}", va="center", fontsize=9)
+        ax.text(width + 0.0005, bar.get_y() + bar.get_height() / 2, f"{width:.4f}", va="center", fontsize=8)
 
-    fig.tight_layout()
     return fig
 
 
@@ -831,13 +939,11 @@ def plot_comparison_dashboard_figures(
     title_b: str = "Model B",
 ) -> Tuple[plt.Figure, plt.Figure, plt.Figure]:
     """Generates two separate decision boundary figures and one comparative training curve figure."""
-    x_min, x_max = X[:, 0].min() - 0.5, X[:, 0].max() + 0.5
-    y_min, y_max = X[:, 1].min() - 0.5, X[:, 1].max() + 0.5
-    xx, yy = np.meshgrid(np.linspace(x_min, x_max, 180), np.linspace(y_min, y_max, 180))
+    xx, yy = np.meshgrid(np.linspace(-2.5, 2.5, 120), np.linspace(-2.5, 2.5, 120))
     grid_points = np.c_[xx.ravel(), yy.ravel()].astype(np.float32)
 
     # 1. Model A Decision Boundary
-    fig_a, ax_a = plt.subplots(figsize=(5.5, 4.6), dpi=120)
+    fig_a, ax_a = plt.subplots(figsize=(5.5, 4.2), dpi=100, layout="constrained")
     model_a.eval()
     with no_grad():
         logits_a = model_a(Tensor(grid_points, requires_grad=False))
@@ -857,10 +963,9 @@ def plot_comparison_dashboard_figures(
     ax_a.set_xlabel("Feature x1", fontsize=9)
     ax_a.set_ylabel("Feature x2", fontsize=9)
     ax_a.grid(True, linestyle=":", alpha=0.4)
-    fig_a.tight_layout()
 
     # 2. Model B Decision Boundary
-    fig_b, ax_b = plt.subplots(figsize=(5.5, 4.6), dpi=120)
+    fig_b, ax_b = plt.subplots(figsize=(5.5, 4.2), dpi=100, layout="constrained")
     model_b.eval()
     with no_grad():
         logits_b = model_b(Tensor(grid_points, requires_grad=False))
@@ -880,10 +985,9 @@ def plot_comparison_dashboard_figures(
     ax_b.set_xlabel("Feature x1", fontsize=9)
     ax_b.set_ylabel("Feature x2", fontsize=9)
     ax_b.grid(True, linestyle=":", alpha=0.4)
-    fig_b.tight_layout()
 
     # 3. Comparative Curves
-    fig_curves, (ax_loss, ax_acc) = plt.subplots(1, 2, figsize=(11, 3.8), dpi=120)
+    fig_curves, (ax_loss, ax_acc) = plt.subplots(1, 2, figsize=(10, 3.5), dpi=100, layout="constrained")
     epochs_range_a = range(1, len(loss_hist_a) + 1)
     epochs_range_b = range(1, len(loss_hist_b) + 1)
 
@@ -905,89 +1009,183 @@ def plot_comparison_dashboard_figures(
     ax_acc.set_ylim([0, 105])
     ax_acc.grid(True, linestyle=":", alpha=0.4)
     ax_acc.legend(loc="lower right", fontsize=8)
-    fig_curves.tight_layout()
 
     return fig_a, fig_b, fig_curves
 
 
 # -----------------------------------------------------------------------------
-# MNIST Canvas Preprocessing Pipeline
+# MNIST Canvas Preprocessing Pipeline (Multi-Digit Connected Components)
 # -----------------------------------------------------------------------------
 
-def preprocess_canvas_image(canvas_result) -> np.ndarray | None:
-    """
-    Extracts, centers, and normalizes a drawn digit from the Streamlit canvas
-    into a (1, 28, 28) float32 array matching MNIST preprocessing conventions.
+def label_components_numpy(mask: np.ndarray) -> Tuple[np.ndarray, int]:
+    """Connected component labeling using 8-connectivity BFS in pure Python/NumPy."""
+    H, W = mask.shape
+    labeled = np.zeros((H, W), dtype=np.int32)
+    current_label = 0
+    visited = np.zeros((H, W), dtype=bool)
 
-    Returns None if the canvas is blank.
+    ys, xs = np.where(mask)
+    for y, x in zip(ys, xs):
+        if visited[y, x]:
+            continue
+        current_label += 1
+        queue = [(y, x)]
+        visited[y, x] = True
+        labeled[y, x] = current_label
+
+        head = 0
+        while head < len(queue):
+            cy, cx = queue[head]
+            head += 1
+
+            for dy in (-1, 0, 1):
+                for dx in (-1, 0, 1):
+                    if dy == 0 and dx == 0:
+                        continue
+                    ny, nx = cy + dy, cx + dx
+                    if 0 <= ny < H and 0 <= nx < W:
+                        if mask[ny, nx] and not visited[ny, nx]:
+                            visited[ny, nx] = True
+                            labeled[ny, nx] = current_label
+                            queue.append((ny, nx))
+
+    return labeled, current_label
+
+
+def segment_and_preprocess_digits(canvas_result) -> List[np.ndarray]:
+    """
+    Extracts, segments, centers, and normalizes one or multiple drawn digits
+    from the canvas into a list of (28, 28) float32 arrays ordered left-to-right.
     """
     if canvas_result is None or canvas_result.image_data is None:
-        return None
+        return []
 
-    # Extract the stroke channel (white #FFFFFF stroke on black #000000 background)
     raw_stroke = canvas_result.image_data[:, :, 0].astype(np.float32)
-
-    # Check if canvas contains drawn content (max pixel intensity > 20)
     if np.max(raw_stroke) <= 20.0:
-        return None
+        return []
 
-    # Find bounding box of pixels > 20
-    y_indices, x_indices = np.where(raw_stroke > 20.0)
-    if len(y_indices) == 0 or len(x_indices) == 0:
-        return None
+    mask = raw_stroke > 20.0
+    if not np.any(mask):
+        return []
 
-    ymin, ymax = int(y_indices.min()), int(y_indices.max())
-    xmin, xmax = int(x_indices.min()), int(x_indices.max())
-
-    # Crop the digit strictly to the bounding box
-    cropped = raw_stroke[ymin:ymax + 1, xmin:xmax + 1]
-    h, w = cropped.shape
-    if h <= 0 or w <= 0:
-        return None
-
-    # Resize cropped box to fit inside a 20x20 box preserving aspect ratio
-    if h > w:
-        new_h = 20
-        new_w = max(1, int(round(w * 20.0 / h)))
+    # Connected component labeling
+    if HAS_SCIPY:
+        labeled, num_features = ndi.label(mask)
     else:
-        new_w = 20
-        new_h = max(1, int(round(h * 20.0 / w)))
+        labeled, num_features = label_components_numpy(mask)
 
-    pil_img = Image.fromarray(cropped.astype(np.uint8), mode="L").resize(
-        (new_w, new_h), Image.Resampling.BILINEAR
-    )
-    resized = np.array(pil_img, dtype=np.float32)
+    if num_features == 0:
+        return []
 
-    # Place the 20x20 digit into the center of a 28x28 zero-filled (black) array
-    digit_28x28 = np.zeros((28, 28), dtype=np.float32)
-    y_offset = (28 - new_h) // 2
-    x_offset = (28 - new_w) // 2
-    digit_28x28[y_offset:y_offset + new_h, x_offset:x_offset + new_w] = resized
+    # Extract initial bounding boxes and filter noise
+    boxes = []
+    for k in range(1, num_features + 1):
+        comp_y, comp_x = np.where(labeled == k)
+        if len(comp_y) < 15:  # filter noise speckles
+            continue
+        ymin, ymax = int(comp_y.min()), int(comp_y.max())
+        xmin, xmax = int(comp_x.min()), int(comp_x.max())
+        h = ymax - ymin + 1
+        w = xmax - xmin + 1
+        if h < 5 and w < 5:
+            continue
+        boxes.append({"ymin": ymin, "ymax": ymax, "xmin": xmin, "xmax": xmax})
 
-    # Center using center-of-mass (standard MNIST format)
-    total_mass = digit_28x28.sum()
-    if total_mass > 0:
-        gy, gx = np.mgrid[0:28, 0:28]
-        cy = (gy * digit_28x28).sum() / total_mass
-        cx = (gx * digit_28x28).sum() / total_mass
-        shift_y = int(np.round(14.0 - cy))
-        shift_x = int(np.round(14.0 - cx))
-        shift_y = int(np.clip(shift_y, -4, 4))
-        shift_x = int(np.clip(shift_x, -4, 4))
+    if not boxes:
+        return []
 
-        shifted = np.zeros_like(digit_28x28)
-        for r in range(28):
-            for c in range(28):
-                nr, nc = r + shift_y, c + shift_x
-                if 0 <= nr < 28 and 0 <= nc < 28:
-                    shifted[nr, nc] = digit_28x28[r, c]
-        digit_28x28 = shifted
+    # Merge overlapping / closely stacked strokes belonging to the same digit
+    merged = True
+    while merged:
+        merged = False
+        new_boxes = []
+        used = set()
+        for i in range(len(boxes)):
+            if i in used:
+                continue
+            b1 = dict(boxes[i])
+            for j in range(i + 1, len(boxes)):
+                if j in used:
+                    continue
+                b2 = boxes[j]
+                x_overlap = min(b1["xmax"], b2["xmax"]) - max(b1["xmin"], b2["xmin"])
+                x_dist = max(0, max(b1["xmin"], b2["xmin"]) - min(b1["xmax"], b2["xmax"]))
+                y_overlap = min(b1["ymax"], b2["ymax"]) - max(b1["ymin"], b2["ymin"])
+                y_dist = max(0, max(b1["ymin"], b2["ymin"]) - min(b1["ymax"], b2["ymax"]))
 
-    # Normalize strictly to [0.0, 1.0] (0.0 = black background, 1.0 = white stroke)
-    digit_28x28 = np.clip(digit_28x28 / 255.0, 0.0, 1.0)
+                # Merge if horizontal overlap exists or close and vertically aligned
+                should_merge = False
+                if x_overlap >= -4 and (y_overlap >= -8 or (y_dist <= 18 and (x_overlap > 0 or x_dist <= 6))):
+                    should_merge = True
 
-    # Reshape to (1, 28, 28) batch tensor
-    return digit_28x28.reshape(1, 28, 28)
+                if should_merge:
+                    b1 = {
+                        "ymin": min(b1["ymin"], b2["ymin"]),
+                        "ymax": max(b1["ymax"], b2["ymax"]),
+                        "xmin": min(b1["xmin"], b2["xmin"]),
+                        "xmax": max(b1["xmax"], b2["xmax"]),
+                    }
+                    used.add(j)
+                    merged = True
+            new_boxes.append(b1)
+            used.add(i)
+        boxes = new_boxes
+
+    # Sort bounding boxes strictly left-to-right
+    boxes.sort(key=lambda b: b["xmin"])
+
+    processed_digits: List[np.ndarray] = []
+    for b in boxes:
+        cropped = raw_stroke[b["ymin"]:b["ymax"] + 1, b["xmin"]:b["xmax"] + 1]
+        h, w = cropped.shape
+        if h <= 0 or w <= 0:
+            continue
+
+        if h > w:
+            new_h = 20
+            new_w = max(1, int(round(w * 20.0 / h)))
+        else:
+            new_w = 20
+            new_h = max(1, int(round(h * 20.0 / w)))
+
+        pil_img = Image.fromarray(cropped.astype(np.uint8), mode="L").resize(
+            (new_w, new_h), Image.Resampling.BILINEAR
+        )
+        resized = np.array(pil_img, dtype=np.float32)
+
+        digit_28x28 = np.zeros((28, 28), dtype=np.float32)
+        y_offset = (28 - new_h) // 2
+        x_offset = (28 - new_w) // 2
+        digit_28x28[y_offset:y_offset + new_h, x_offset:x_offset + new_w] = resized
+
+        total_mass = digit_28x28.sum()
+        if total_mass > 0:
+            gy, gx = np.mgrid[0:28, 0:28]
+            cy = (gy * digit_28x28).sum() / total_mass
+            cx = (gx * digit_28x28).sum() / total_mass
+            shift_y = int(np.clip(np.round(14.0 - cy), -4, 4))
+            shift_x = int(np.clip(np.round(14.0 - cx), -4, 4))
+
+            shifted = np.zeros_like(digit_28x28)
+            for r in range(28):
+                for c in range(28):
+                    nr, nc = r + shift_y, c + shift_x
+                    if 0 <= nr < 28 and 0 <= nc < 28:
+                        shifted[nr, nc] = digit_28x28[r, c]
+            digit_28x28 = shifted
+
+        digit_28x28 = np.clip(digit_28x28 / 255.0, 0.0, 1.0)
+        processed_digits.append(digit_28x28)
+
+    return processed_digits
+
+
+def preprocess_canvas_image(canvas_result) -> Optional[np.ndarray]:
+    """Backward-compatible single-digit preprocessor returning (1, 28, 28) or None."""
+    digits = segment_and_preprocess_digits(canvas_result)
+    if not digits:
+        return None
+    return digits[0].reshape(1, 28, 28)
 
 
 def stable_softmax(logits: np.ndarray) -> np.ndarray:
@@ -997,11 +1195,55 @@ def stable_softmax(logits: np.ndarray) -> np.ndarray:
     return exp_vals / np.sum(exp_vals, axis=-1, keepdims=True)
 
 
+def plot_plotly_digit_probabilities(probs: np.ndarray) -> Optional[Any]:
+    """Generates an interactive horizontal bar chart of digit probabilities 0-9 using Plotly."""
+    if not HAS_PLOTLY:
+        return None
+    classes = [f"Digit {c}" for c in range(10)]
+    probs_pct = [float(p * 100) for p in probs]
+    max_idx = int(np.argmax(probs))
+    colors = ["#3B82F6" if i != max_idx else "#8B5CF6" for i in range(10)]
+
+    fig = go.Figure(
+        go.Bar(
+            x=probs_pct,
+            y=classes,
+            orientation="h",
+            marker=dict(color=colors, line=dict(color="#0F172A", width=1)),
+            text=[f"{v:.1f}%" if v > 0.5 else "" for v in probs_pct],
+            textposition="auto",
+            hoverinfo="x+y",
+        )
+    )
+
+    fig.update_layout(
+        xaxis=dict(
+            title=dict(text="Probability (%)", font=dict(color="#CBD5E1")),
+            tickfont=dict(color="#CBD5E1"),
+            gridcolor="#334155",
+            range=[0, 105],
+            fixedrange=True,
+        ),
+        yaxis=dict(
+            tickfont=dict(color="#CBD5E1", size=11),
+            gridcolor="#334155",
+            autorange="reversed",
+            fixedrange=True,
+        ),
+        paper_bgcolor="#0F172A",
+        plot_bgcolor="#0F172A",
+        margin=dict(l=10, r=20, t=10, b=10),
+        height=320,
+        dragmode=False,
+    )
+    return fig
+
+
 def plot_probability_distribution(probs: np.ndarray) -> plt.Figure:
     """Creates a horizontal bar chart of class probabilities 0-9."""
-    fig, ax = plt.subplots(figsize=(5, 3.5), dpi=120)
+    fig, ax = plt.subplots(figsize=(5, 3.5), dpi=100, layout="constrained")
     classes = np.arange(10)
-    colors = ["#667eea" if p < np.max(probs) else "#764ba2" for p in probs]
+    colors = ["#3B82F6" if p < np.max(probs) else "#8B5CF6" for p in probs]
 
     bars = ax.barh(classes, probs * 100, color=colors, edgecolor="white", linewidth=0.5, height=0.7)
     ax.set_yticks(classes)
@@ -1023,7 +1265,6 @@ def plot_probability_distribution(probs: np.ndarray) -> plt.Figure:
                 fontweight="bold",
             )
 
-    fig.tight_layout()
     return fig
 
 
@@ -1131,6 +1372,7 @@ def render_single_model_studio():
         acc_history: List[float] = []
         progress_bar = progress_placeholder.progress(0.0)
         start_time = time.time()
+        grad_norms_single: Dict[str, float] = {}
 
         for epoch in range(1, epochs + 1):
             model.train()
@@ -1141,6 +1383,8 @@ def render_single_model_studio():
                 logits = model(batch_X)
                 loss = criterion(logits, batch_y)
                 loss.backward()
+                if epoch == epochs:
+                    grad_norms_single = get_model_gradient_norms(model)
                 optimizer.step()
                 epoch_losses.append(float(loss.data))
 
@@ -1180,6 +1424,7 @@ def render_single_model_studio():
         actual_params = sum(p.data.size for p in model.parameters())
 
         # Store in session state
+        st.session_state["gradient_norms"] = grad_norms_single
         st.session_state["trained_2d_model"] = {
             "model": model,
             "dataset_name": dataset_name,
@@ -1192,6 +1437,7 @@ def render_single_model_studio():
             "final_loss": loss_history[-1],
             "final_acc": acc_history[-1],
             "elapsed_time": elapsed_total,
+            "grad_norms": grad_norms_single,
             "history": st.session_state.get("trained_2d_model", {}).get("history", []),
         }
         has_trained_model = True
@@ -1209,17 +1455,6 @@ def render_single_model_studio():
         final_loss = saved["final_loss"]
         final_acc = saved["final_acc"]
         elapsed_total = saved["elapsed_time"]
-
-        # Resolve interactive click selection from Plotly boundary chart
-        if HAS_PLOTLY and "plotly_single_boundary" in st.session_state:
-            plotly_state = st.session_state["plotly_single_boundary"]
-            if isinstance(plotly_state, dict):
-                sel_pts = plotly_state.get("selection", {}).get("points", [])
-                if sel_pts:
-                    clicked_pt = sel_pts[0]
-                    if "x" in clicked_pt and "y" in clicked_pt:
-                        st.session_state["slider_x1"] = float(np.round(clicked_pt["x"], 2))
-                        st.session_state["slider_x2"] = float(np.round(clicked_pt["y"], 2))
 
         # Resolve slider coordinates first (handling preset buttons)
         init_x1 = st.session_state.pop("test_x1_val", None)
@@ -1270,14 +1505,25 @@ def render_single_model_studio():
 
         # 3. Always render dashboard plots with test point marker overlaid
         if HAS_PLOTLY:
+            def _cb_on_single_plotly_select():
+                state = st.session_state.get("plotly_single_boundary")
+                if isinstance(state, dict):
+                    sel_pts = state.get("selection", {}).get("points", [])
+                    if sel_pts:
+                        clicked_pt = sel_pts[0]
+                        if "x" in clicked_pt and "y" in clicked_pt:
+                            st.session_state["slider_x1"] = float(np.round(clicked_pt["x"], 2))
+                            st.session_state["slider_x2"] = float(np.round(clicked_pt["y"], 2))
+
             fig_b_plotly = plot_plotly_decision_boundary(
                 model, data_X, data_y, test_point=(active_x1, active_x2)
             )
             plot_left.plotly_chart(
                 fig_b_plotly,
-                on_select="rerun",
+                on_select=_cb_on_single_plotly_select,
                 selection_mode=["points"],
                 key="plotly_single_boundary",
+                config={"displayModeBar": False, "scrollZoom": False},
                 width="stretch",
             )
             _, fig_m = plot_dashboard_figures(
@@ -1447,17 +1693,30 @@ def render_single_model_studio():
 
                 # Gradient Telemetry
                 st.markdown("#### 3. Gradient Flow Telemetry")
-                st.caption("Layer-by-layer gradient L2 norms after backpropagation across training epochs:")
-                fig_grad_internal = plot_gradient_norms(model)
-                st.pyplot(fig_grad_internal)
-                plt.close(fig_grad_internal)
+                st.caption("Layer-by-layer gradient L2 norms captured immediately after loss backpropagation on the final training mini-batch:")
+                saved_grad_norms = saved.get("grad_norms") or st.session_state.get("gradient_norms")
+                if saved_grad_norms:
+                    if HAS_PLOTLY:
+                        fig_gn = plot_plotly_gradient_norms(saved_grad_norms, title="Final Backpropagation Gradient Flow (Single Model)")
+                        st.plotly_chart(fig_gn, config={"displayModeBar": False, "scrollZoom": False}, width="stretch")
+                    else:
+                        fig_gn = plot_gradient_norms(saved_grad_norms)
+                        st.pyplot(fig_gn)
+                        plt.close(fig_gn)
+                else:
+                    st.info("Train the model to visualize post-backpropagation gradient flow across layers.")
 
     elif not start_training:
         # Initial static plot before training starts
         initial_model = build_model(num_layers, hidden_dim, activation_name, use_batchnorm, dropout_p)
         if HAS_PLOTLY:
-            fig_b_plotly = plot_plotly_decision_boundary(initial_model, X, y, title="Untrained Initial Decision Boundary (Click to Predict)")
-            plot_left.plotly_chart(fig_b_plotly, on_select="rerun", selection_mode=["points"], key="plotly_single_init", width="stretch")
+            fig_b_plotly = plot_plotly_decision_boundary(initial_model, X, y, title="Untrained Initial Decision Boundary")
+            plot_left.plotly_chart(
+                fig_b_plotly,
+                key="plotly_single_init",
+                config={"displayModeBar": False, "scrollZoom": False},
+                width="stretch",
+            )
             _, fig_m = plot_dashboard_figures(initial_model, X, y, [0.693], [50.0])
             plot_right.pyplot(fig_m)
             plt.close(fig_m)
@@ -1591,6 +1850,8 @@ def render_model_comparison_studio():
 
         progress_bar = progress_placeholder.progress(0.0)
         start_time = time.time()
+        grad_norms_a: Dict[str, float] = {}
+        grad_norms_b: Dict[str, float] = {}
 
         for epoch in range(1, epochs + 1):
             model_a.train()
@@ -1604,6 +1865,8 @@ def render_model_comparison_studio():
                 logits_a = model_a(batch_X)
                 loss_a = criterion_a(logits_a, batch_y)
                 loss_a.backward()
+                if epoch == epochs:
+                    grad_norms_a = get_model_gradient_norms(model_a)
                 opt_a.step()
                 epoch_losses_a.append(float(loss_a.data))
 
@@ -1612,6 +1875,8 @@ def render_model_comparison_studio():
                 logits_b = model_b(batch_X)
                 loss_b = criterion_b(logits_b, batch_y)
                 loss_b.backward()
+                if epoch == epochs:
+                    grad_norms_b = get_model_gradient_norms(model_b)
                 opt_b.step()
                 epoch_losses_b.append(float(loss_b.data))
 
@@ -1669,6 +1934,8 @@ def render_model_comparison_studio():
         actual_params_a = sum(p.data.size for p in model_a.parameters())
         actual_params_b = sum(p.data.size for p in model_b.parameters())
 
+        st.session_state["gradient_norms_a"] = grad_norms_a
+        st.session_state["gradient_norms_b"] = grad_norms_b
         st.session_state["model_comparison"] = {
             "model_a": model_a,
             "model_b": model_b,
@@ -1690,6 +1957,8 @@ def render_model_comparison_studio():
             "final_loss_b": loss_hist_b[-1],
             "final_acc_b": acc_hist_b[-1],
             "elapsed_time": elapsed_total,
+            "grad_norms_a": grad_norms_a,
+            "grad_norms_b": grad_norms_b,
         }
         has_comparison = True
 
@@ -1715,19 +1984,6 @@ def render_model_comparison_studio():
         f_loss_b = saved["final_loss_b"]
         f_acc_b = saved["final_acc_b"]
         elapsed_total = saved["elapsed_time"]
-
-        # Resolve interactive click selection from Plotly comparison charts
-        if HAS_PLOTLY:
-            for p_key in ["plotly_comp_a", "plotly_comp_b"]:
-                if p_key in st.session_state:
-                    p_state = st.session_state[p_key]
-                    if isinstance(p_state, dict):
-                        sel_pts = p_state.get("selection", {}).get("points", [])
-                        if sel_pts:
-                            clicked_pt = sel_pts[0]
-                            if "x" in clicked_pt and "y" in clicked_pt:
-                                st.session_state["comp_slider_x1"] = float(np.round(clicked_pt["x"], 2))
-                                st.session_state["comp_slider_x2"] = float(np.round(clicked_pt["y"], 2))
 
         # Resolve slider coordinates first (handling preset buttons)
         init_x1 = st.session_state.pop("comp_test_x1_val", None)
@@ -1781,6 +2037,26 @@ def render_model_comparison_studio():
 
         # 3. Always render comparison dashboard plots with test point marker overlaid
         if HAS_PLOTLY:
+            def _cb_on_comp_plotly_select_a():
+                state = st.session_state.get("plotly_comp_a")
+                if isinstance(state, dict):
+                    sel_pts = state.get("selection", {}).get("points", [])
+                    if sel_pts:
+                        clicked_pt = sel_pts[0]
+                        if "x" in clicked_pt and "y" in clicked_pt:
+                            st.session_state["comp_slider_x1"] = float(np.round(clicked_pt["x"], 2))
+                            st.session_state["comp_slider_x2"] = float(np.round(clicked_pt["y"], 2))
+
+            def _cb_on_comp_plotly_select_b():
+                state = st.session_state.get("plotly_comp_b")
+                if isinstance(state, dict):
+                    sel_pts = state.get("selection", {}).get("points", [])
+                    if sel_pts:
+                        clicked_pt = sel_pts[0]
+                        if "x" in clicked_pt and "y" in clicked_pt:
+                            st.session_state["comp_slider_x1"] = float(np.round(clicked_pt["x"], 2))
+                            st.session_state["comp_slider_x2"] = float(np.round(clicked_pt["y"], 2))
+
             fig_a_plotly = plot_plotly_decision_boundary(
                 model_a, data_X, data_y, test_point=(cur_comp_x1, cur_comp_x2),
                 title=f"Model A: {arch_a_str} ({act_a_str}) - {f_acc_a:.1f}%",
@@ -1789,8 +2065,22 @@ def render_model_comparison_studio():
                 model_b, data_X, data_y, test_point=(cur_comp_x1, cur_comp_x2),
                 title=f"Model B: {arch_b_str} ({act_b_str}) - {f_acc_b:.1f}%",
             )
-            plot_a_holder.plotly_chart(fig_a_plotly, on_select="rerun", selection_mode=["points"], key="plotly_comp_a", width="stretch")
-            plot_b_holder.plotly_chart(fig_b_plotly, on_select="rerun", selection_mode=["points"], key="plotly_comp_b", width="stretch")
+            plot_a_holder.plotly_chart(
+                fig_a_plotly,
+                on_select=_cb_on_comp_plotly_select_a,
+                selection_mode=["points"],
+                key="plotly_comp_a",
+                config={"displayModeBar": False, "scrollZoom": False},
+                width="stretch",
+            )
+            plot_b_holder.plotly_chart(
+                fig_b_plotly,
+                on_select=_cb_on_comp_plotly_select_b,
+                selection_mode=["points"],
+                key="plotly_comp_b",
+                config={"displayModeBar": False, "scrollZoom": False},
+                width="stretch",
+            )
             _, _, fig_c = plot_comparison_dashboard_figures(
                 model_a, model_b, data_X, data_y, l_hist_a, a_hist_a, l_hist_b, a_hist_b,
                 test_point=(cur_comp_x1, cur_comp_x2),
@@ -1909,6 +2199,18 @@ def render_model_comparison_studio():
                         arr_a = raw_a[sel_a]
                         st.caption(f"Array Shape: {list(arr_a.shape)}")
                         st.dataframe(arr_a.reshape(1, -1) if arr_a.ndim == 1 else arr_a, width="stretch")
+                    st.caption("Model A Gradient Flow Telemetry:")
+                    gn_a = saved.get("grad_norms_a") or st.session_state.get("gradient_norms_a")
+                    if gn_a:
+                        if HAS_PLOTLY:
+                            fig_gna = plot_plotly_gradient_norms(gn_a, title=f"Model A Gradient Flow ({arch_a_str})")
+                            st.plotly_chart(fig_gna, config={"displayModeBar": False, "scrollZoom": False}, width="stretch")
+                        else:
+                            fig_gna = plot_gradient_norms(gn_a)
+                            st.pyplot(fig_gna)
+                            plt.close(fig_gna)
+                    else:
+                        st.info("Train the model to visualize post-backpropagation gradient flow across layers.")
 
                 with tab_diag_b:
                     st.markdown(f"#### Model B Forward Trace ({test_x1:.2f}, {test_x2:.2f})")
@@ -1922,6 +2224,18 @@ def render_model_comparison_studio():
                         arr_b = raw_b[sel_b]
                         st.caption(f"Array Shape: {list(arr_b.shape)}")
                         st.dataframe(arr_b.reshape(1, -1) if arr_b.ndim == 1 else arr_b, width="stretch")
+                    st.caption("Model B Gradient Flow Telemetry:")
+                    gn_b = saved.get("grad_norms_b") or st.session_state.get("gradient_norms_b")
+                    if gn_b:
+                        if HAS_PLOTLY:
+                            fig_gnb = plot_plotly_gradient_norms(gn_b, title=f"Model B Gradient Flow ({arch_b_str})")
+                            st.plotly_chart(fig_gnb, config={"displayModeBar": False, "scrollZoom": False}, width="stretch")
+                        else:
+                            fig_gnb = plot_gradient_norms(gn_b)
+                            st.pyplot(fig_gnb)
+                            plt.close(fig_gnb)
+                    else:
+                        st.info("Train the model to visualize post-backpropagation gradient flow across layers.")
 
     elif not start_training:
         init_a = build_model(num_layers_a, hidden_dim_a, act_a, bn_a, dropout_a)
@@ -1929,8 +2243,18 @@ def render_model_comparison_studio():
         if HAS_PLOTLY:
             fig_a_plotly = plot_plotly_decision_boundary(init_a, X, y, title="Model A (Untrained Baseline)")
             fig_b_plotly = plot_plotly_decision_boundary(init_b, X, y, title="Model B (Untrained Baseline)")
-            plot_a_holder.plotly_chart(fig_a_plotly, on_select="rerun", selection_mode=["points"], key="plotly_comp_init_a", width="stretch")
-            plot_b_holder.plotly_chart(fig_b_plotly, on_select="rerun", selection_mode=["points"], key="plotly_comp_init_b", width="stretch")
+            plot_a_holder.plotly_chart(
+                fig_a_plotly,
+                key="plotly_comp_init_a",
+                config={"displayModeBar": False, "scrollZoom": False},
+                width="stretch",
+            )
+            plot_b_holder.plotly_chart(
+                fig_b_plotly,
+                key="plotly_comp_init_b",
+                config={"displayModeBar": False, "scrollZoom": False},
+                width="stretch",
+            )
             _, _, fig_c = plot_comparison_dashboard_figures(
                 init_a, init_b, X, y, [0.693], [50.0], [0.693], [50.0],
                 title_a="Model A", title_b="Model B",
@@ -2020,8 +2344,24 @@ def render_mnist_inference_tab():
             st.session_state["stroke_history"] = []
         if "redo_stack" not in st.session_state:
             st.session_state["redo_stack"] = []
-        if "needs_sync" not in st.session_state:
-            st.session_state["needs_sync"] = False
+
+        # Action functions for Undo, Redo, and Clear
+        def on_undo():
+            if st.session_state["stroke_history"]:
+                stroke = st.session_state["stroke_history"].pop()
+                st.session_state["redo_stack"].append(stroke)
+                st.session_state["canvas_key"] += 1
+
+        def on_redo():
+            if st.session_state["redo_stack"]:
+                stroke = st.session_state["redo_stack"].pop()
+                st.session_state["stroke_history"].append(stroke)
+                st.session_state["canvas_key"] += 1
+
+        def on_clear():
+            st.session_state["stroke_history"] = []
+            st.session_state["redo_stack"] = []
+            st.session_state["canvas_key"] += 1
 
         # Canvas controls
         brush_width = st.slider(
@@ -2029,12 +2369,11 @@ def render_mnist_inference_tab():
             key="mnist_brush_width",
         )
 
-        # Only pass initial_drawing when an explicit Undo/Redo/Clear action was triggered
-        if st.session_state.get("needs_sync", False) and st.session_state.get("stroke_history"):
-            init_data = {"objects": st.session_state["stroke_history"]}
-        else:
-            init_data = None
-        st.session_state["needs_sync"] = False
+        init_drawing = (
+            {"objects": st.session_state["stroke_history"]}
+            if st.session_state["stroke_history"]
+            else None
+        )
 
         canvas_result = st_canvas(
             fill_color="rgba(255, 165, 0, 0.3)",
@@ -2045,107 +2384,162 @@ def render_mnist_inference_tab():
             width=280,
             drawing_mode="freedraw",
             display_toolbar=False,
-            initial_drawing=init_data,
-            key=f"mnist_canvas_{st.session_state.get('canvas_key', 0)}",
+            initial_drawing=init_drawing,
+            key=f"mnist_canvas_{st.session_state['canvas_key']}",
         )
 
-        # Track stroke history without feeding back during standard drawing
+        # Synchronize stroke history only when NEW strokes are drawn by the user
         if canvas_result is not None and canvas_result.json_data is not None and "objects" in canvas_result.json_data:
             current_objects = canvas_result.json_data["objects"]
-            if current_objects != st.session_state.get("stroke_history"):
+            if len(current_objects) > len(st.session_state["stroke_history"]):
                 st.session_state["stroke_history"] = current_objects
                 st.session_state["redo_stack"] = []
 
-        # Native Action Buttons Callbacks
-        def _cb_canvas_undo():
-            if st.session_state.get("stroke_history"):
-                popped = st.session_state["stroke_history"].pop()
-                st.session_state.setdefault("redo_stack", []).append(popped)
-                st.session_state["canvas_key"] = st.session_state.get("canvas_key", 0) + 1
-                st.session_state["needs_sync"] = True
-
-        def _cb_canvas_redo():
-            if st.session_state.get("redo_stack"):
-                restored = st.session_state["redo_stack"].pop()
-                st.session_state.setdefault("stroke_history", []).append(restored)
-                st.session_state["canvas_key"] = st.session_state.get("canvas_key", 0) + 1
-                st.session_state["needs_sync"] = True
-
-        def _cb_canvas_clear():
-            st.session_state["stroke_history"] = []
-            st.session_state["redo_stack"] = []
-            st.session_state["canvas_key"] = st.session_state.get("canvas_key", 0) + 1
-            st.session_state["needs_sync"] = True
-
         # Native Action Buttons Row
         c1, c2, c3 = st.columns(3)
-        with c1:
-            st.button("Undo", width="stretch", key="mnist_undo", on_click=_cb_canvas_undo)
-        with c2:
-            st.button("Redo", width="stretch", key="mnist_redo", on_click=_cb_canvas_redo)
-        with c3:
-            st.button("Clear", width="stretch", key="mnist_clear", on_click=_cb_canvas_clear)
+        c1.button(
+            "Undo",
+            width="stretch",
+            key="mnist_undo",
+            on_click=on_undo,
+            disabled=len(st.session_state["stroke_history"]) == 0,
+        )
+        c2.button(
+            "Redo",
+            width="stretch",
+            key="mnist_redo",
+            on_click=on_redo,
+            disabled=len(st.session_state["redo_stack"]) == 0,
+        )
+        c3.button(
+            "Clear",
+            width="stretch",
+            key="mnist_clear",
+            on_click=on_clear,
+        )
 
-        # Preprocess and show thumbnail
-        processed = preprocess_canvas_image(canvas_result)
+        # Preprocess and show thumbnails
+        digits = segment_and_preprocess_digits(canvas_result)
 
-        if processed is not None:
-            st.subheader("Preprocessed Input (28x28)")
-            st.image(processed[0], clamp=True, width=140, caption="28x28 Centered MNIST Input")
+        if digits:
+            if len(digits) == 1:
+                st.subheader("Preprocessed Input (28x28)")
+                st.image(digits[0], clamp=True, width=140, caption="28x28 Centered MNIST Input")
+            else:
+                st.subheader(f"Segmented Digits ({len(digits)} Detected)")
+                thumb_cols = st.columns(min(len(digits), 5))
+                for idx, (col_thumb, d_img) in enumerate(zip(thumb_cols, digits)):
+                    with col_thumb:
+                        st.image(d_img, clamp=True, width=70, caption=f"Digit #{idx + 1}")
 
     with col_results:
-        if processed is not None:
-            # Run inference
-            input_tensor = Tensor(processed.astype(np.float32), requires_grad=False)
+        if digits:
+            # Run sequential inference for each detected digit
+            predictions = []
+            for d_img in digits:
+                input_tensor = Tensor(d_img.reshape(1, 28, 28).astype(np.float32), requires_grad=False)
+                with no_grad():
+                    logits = model(input_tensor)
+                probs = stable_softmax(logits.data[0])
+                pred_cls = int(np.argmax(probs))
+                conf = float(probs[pred_cls])
+                predictions.append((pred_cls, conf, probs))
 
-            with no_grad():
-                logits = model(input_tensor)
+            if len(predictions) == 1:
+                # Single-digit UI
+                pred_cls, conf, probs = predictions[0]
+                top3_indices = np.argsort(probs)[::-1][:3]
 
-            probs = stable_softmax(logits.data[0])
-            predicted_class = int(np.argmax(probs))
-            confidence = float(probs[predicted_class])
+                st.markdown(
+                    f"""
+                    <div class="prediction-card">
+                        <p class="prediction-label">Predicted Digit</p>
+                        <p class="prediction-digit">{pred_cls}</p>
+                        <p class="prediction-confidence">{conf * 100:.1f}% Confidence</p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
-            # Top-3 predictions
-            top3_indices = np.argsort(probs)[::-1][:3]
+                # Top-3 ranking cards
+                st.markdown("<div style='margin-top: 1.25rem;'></div>", unsafe_allow_html=True)
+                st.subheader("Top-3 Predictions")
+                rank_cols = st.columns(3)
+                rank_labels = ["1st", "2nd", "3rd"]
+                for i, col in enumerate(rank_cols):
+                    idx = top3_indices[i]
+                    p = probs[idx]
+                    with col:
+                        st.markdown(
+                            f"""
+                            <div class="rank-card">
+                                <p style="font-size:0.75rem;color:#94A3B8;margin:0;text-transform:uppercase;letter-spacing:0.5px;">{rank_labels[i]}</p>
+                                <p class="rank-digit">{idx}</p>
+                                <p class="rank-prob">{p * 100:.1f}%</p>
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
 
-            # Prediction callout card
-            st.markdown(
-                f"""
-                <div class="prediction-card">
-                    <p class="prediction-label">Predicted Digit</p>
-                    <p class="prediction-digit">{predicted_class}</p>
-                    <p class="prediction-confidence">{confidence * 100:.1f}% Confidence</p>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+                # Full probability distribution bar chart with vertical separation
+                st.markdown("<div style='margin-top: 1.5rem;'></div>", unsafe_allow_html=True)
+                st.subheader("Probability Distribution")
+                if HAS_PLOTLY:
+                    fig_probs = plot_plotly_digit_probabilities(probs)
+                    st.plotly_chart(fig_probs, key="plotly_mnist_probs", config={"displayModeBar": False, "scrollZoom": False}, width="stretch")
+                else:
+                    fig_probs = plot_probability_distribution(probs)
+                    st.pyplot(fig_probs)
+                    plt.close(fig_probs)
 
-            # Top-3 ranking cards
-            st.subheader("Top-3 Predictions")
-            rank_cols = st.columns(3)
-            rank_labels = ["1st", "2nd", "3rd"]
-            for i, col in enumerate(rank_cols):
-                idx = top3_indices[i]
-                p = probs[idx]
-                with col:
-                    st.markdown(
-                        f"""
-                        <div class="rank-card">
-                            <p style="font-size:0.75rem;color:#6c757d;margin:0;">{rank_labels[i]}</p>
-                            <p class="rank-digit">{idx}</p>
-                            <p class="rank-prob">{p * 100:.1f}%</p>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
+            else:
+                # Multi-digit sequence UI
+                combined_number = "".join(str(p[0]) for p in predictions)
+                avg_confidence = float(np.mean([p[1] for p in predictions]))
 
-            # Full probability distribution bar chart
-            st.subheader("Probability Distribution")
-            fig_probs = plot_probability_distribution(probs)
-            st.pyplot(fig_probs)
-            plt.close(fig_probs)
+                st.markdown(
+                    f"""
+                    <div class="prediction-card">
+                        <p class="prediction-label">Recognized Number Sequence ({len(predictions)} Digits)</p>
+                        <p class="prediction-digit" style="letter-spacing: 4px;">{combined_number}</p>
+                        <p class="prediction-confidence">{avg_confidence * 100:.1f}% Avg Confidence</p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+                st.markdown("<div style='margin-top: 1.25rem;'></div>", unsafe_allow_html=True)
+                st.subheader("Left-to-Right Digit Breakdown")
+                breakdown_cols = st.columns(min(len(predictions), 5))
+                for i, (col, (pred_cls, conf, _)) in enumerate(zip(breakdown_cols, predictions)):
+                    with col:
+                        st.markdown(
+                            f"""
+                            <div class="rank-card">
+                                <p style="font-size:0.75rem;color:#94A3B8;margin:0;text-transform:uppercase;letter-spacing:0.5px;">Position #{i+1}</p>
+                                <p class="rank-digit">{pred_cls}</p>
+                                <p class="rank-prob">{conf * 100:.1f}%</p>
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+
+                # Multi-digit probability distribution inspector
+                st.markdown("<div style='margin-top: 1.5rem;'></div>", unsafe_allow_html=True)
+                st.subheader("Per-Digit Probability Breakdown")
+                tabs_digits = st.tabs([f"Digit #{i+1} ('{pred_cls}')" for i, (pred_cls, _, _) in enumerate(predictions)])
+                for i, (tab, (pred_cls, conf, probs)) in enumerate(zip(tabs_digits, predictions)):
+                    with tab:
+                        st.caption(f"Predicted class: **{pred_cls}** with **{conf * 100:.2f}%** confidence")
+                        if HAS_PLOTLY:
+                            fig_p = plot_plotly_digit_probabilities(probs)
+                            st.plotly_chart(fig_p, key=f"plotly_mnist_probs_digit_{i}", config={"displayModeBar": False, "scrollZoom": False}, width="stretch")
+                        else:
+                            fig_p = plot_probability_distribution(probs)
+                            st.pyplot(fig_p)
+                            plt.close(fig_p)
         else:
-            st.info("Draw a digit on the canvas to see predictions.")
+            st.info("Draw one or more digits on the canvas to see predictions.")
 
 
 # -----------------------------------------------------------------------------

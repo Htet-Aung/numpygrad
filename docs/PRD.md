@@ -147,4 +147,4 @@ numpygrad/
    - Numerically stable sigmoid formulation with strict gradient clipping.
 
 3. **100% Test Coverage & Determinism**:
-   - Complete automated test suite covering autograd, operators, layers, serialization, data loading, and metrics (**137/137 passing**).
+   - Complete automated test suite covering autograd, operators, layers, serialization, data loading, gradient telemetry, and multi-digit segmentation (**139/139 passing**).

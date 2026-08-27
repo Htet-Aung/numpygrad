@@ -684,4 +684,60 @@ def test_studio_dual_model_training():
     assert 0.0 <= conf_b <= 1.0
 
 
+def test_gradient_flow_telemetry():
+    from app.app import build_model, generate_dataset, plot_gradient_norms, plot_plotly_gradient_norms, get_model_gradient_norms, HAS_PLOTLY
+    X, y = generate_dataset("Two Moons", n_samples=50, noise=0.1, random_state=42)
+    model = build_model(num_layers=2, hidden_dim=8, activation_name="ReLU")
+    crit = nn.CrossEntropyLoss()
+
+    # Forward + Backward to populate grads
+    loss = crit(model(Tensor(X)), y)
+    loss.backward()
+
+    grad_norms = get_model_gradient_norms(model)
+    assert len(grad_norms) > 0
+    for k, v in grad_norms.items():
+        assert isinstance(k, str)
+        assert isinstance(v, float)
+        assert v >= 0.0
+
+    fig_mpl = plot_gradient_norms(grad_norms)
+    assert fig_mpl is not None
+
+    if HAS_PLOTLY:
+        fig_plotly = plot_plotly_gradient_norms(grad_norms)
+        assert fig_plotly is not None
+
+
+def test_multi_digit_segmentation():
+    from app.app import segment_and_preprocess_digits, preprocess_canvas_image
+    from types import SimpleNamespace
+
+    # Mock blank canvas
+    blank_canvas = SimpleNamespace(image_data=np.zeros((280, 280, 4), dtype=np.uint8))
+    assert segment_and_preprocess_digits(blank_canvas) == []
+    assert preprocess_canvas_image(blank_canvas) is None
+
+    # Mock single digit 1
+    single_canvas = SimpleNamespace(image_data=np.zeros((280, 280, 4), dtype=np.uint8))
+    single_canvas.image_data[50:180, 135:145, 0] = 255
+    digits_1 = segment_and_preprocess_digits(single_canvas)
+    assert len(digits_1) == 1
+    assert digits_1[0].shape == (28, 28)
+    assert 0.0 <= digits_1[0].min() and digits_1[0].max() <= 1.0
+
+    # Mock multi-digit 42 (two separated components)
+    multi_canvas = SimpleNamespace(image_data=np.zeros((280, 280, 4), dtype=np.uint8))
+    # Left digit: '4' (vertical + crossbar)
+    multi_canvas.image_data[60:160, 60:68, 0] = 255
+    multi_canvas.image_data[110:118, 40:80, 0] = 255
+    # Right digit: '2'
+    multi_canvas.image_data[60:160, 180:190, 0] = 255
+
+    digits_2 = segment_and_preprocess_digits(multi_canvas)
+    assert len(digits_2) == 2
+    assert digits_2[0].shape == (28, 28)
+    assert digits_2[1].shape == (28, 28)
+
+
 
