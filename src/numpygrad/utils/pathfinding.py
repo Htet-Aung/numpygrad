@@ -15,8 +15,8 @@ import numpygrad.nn as nn
 
 def simulate_rover_path(
     model: nn.Module,
-    start_pos: Tuple[float, float] = (-1.8, 1.2),
-    target_pos: Tuple[float, float] = (1.8, -1.2),
+    start_pos: Tuple[float, float] = (-1.80, 1.20),
+    target_pos: Tuple[float, float] = (1.20, 0.70),
     max_steps: int = 80,
     step_size: float = 0.12,
     num_rays: int = 5,

@@ -1020,8 +1020,8 @@ def plot_plotly_rover_path(
     y: np.ndarray,
     trajectory: List[Tuple[float, float]],
     ray_history: Optional[List[List[Dict[str, Any]]]] = None,
-    start_pos: Tuple[float, float] = (-1.8, 1.2),
-    target_pos: Tuple[float, float] = (1.8, -1.2),
+    start_pos: Tuple[float, float] = (-1.80, 1.20),
+    target_pos: Tuple[float, float] = (1.20, 0.70),
     show_rays: bool = True,
     step_index: Optional[int] = None,
     title: str = "Autonomous Neural Rover Simulation",
@@ -2659,36 +2659,51 @@ def render_neural_pathfinding_tab():
         st.caption("Quick Preset Waypoints:")
         preset_cols = st.columns(2)
         with preset_cols[0]:
-            if st.button("Moon Gap", width="stretch", key="preset_moon"):
-                st.session_state["rover_start_x1"] = -1.6
-                st.session_state["rover_start_x2"] = 1.0
-                st.session_state["rover_target_x1"] = 1.6
-                st.session_state["rover_target_x2"] = -0.8
+            if st.button("Moon Ridge", width="stretch", key="preset_moon_ridge"):
+                st.session_state["rover_start_x1"] = -1.80
+                st.session_state["rover_start_x2"] = 1.20
+                st.session_state["rover_target_x1"] = 1.20
+                st.session_state["rover_target_x2"] = 0.70
         with preset_cols[1]:
-            if st.button("Spiral Arms", width="stretch", key="preset_spiral"):
-                st.session_state["rover_start_x1"] = -1.8
-                st.session_state["rover_start_x2"] = -1.8
-                st.session_state["rover_target_x1"] = 1.8
-                st.session_state["rover_target_x2"] = 1.8
+            if st.button("Moon Channel", width="stretch", key="preset_moon_channel"):
+                st.session_state["rover_start_x1"] = -1.50
+                st.session_state["rover_start_x2"] = 0.80
+                st.session_state["rover_target_x1"] = 0.80
+                st.session_state["rover_target_x2"] = -0.20
 
         preset_cols_2 = st.columns(2)
         with preset_cols_2[0]:
-            if st.button("Circle Bypass", width="stretch", key="preset_circle"):
-                st.session_state["rover_start_x1"] = -2.0
-                st.session_state["rover_start_x2"] = 0.0
-                st.session_state["rover_target_x1"] = 2.0
-                st.session_state["rover_target_x2"] = 0.0
+            if st.button("Ring Bypass", width="stretch", key="preset_ring_bypass"):
+                st.session_state["rover_start_x1"] = -1.80
+                st.session_state["rover_start_x2"] = 0.00
+                st.session_state["rover_target_x1"] = 1.80
+                st.session_state["rover_target_x2"] = 0.00
         with preset_cols_2[1]:
-            if st.button("Direct Diagonal", width="stretch", key="preset_diag"):
-                st.session_state["rover_start_x1"] = -1.8
-                st.session_state["rover_start_x2"] = 1.8
-                st.session_state["rover_target_x1"] = 1.8
-                st.session_state["rover_target_x2"] = -1.8
+            if st.button("Spiral Run", width="stretch", key="preset_spiral_run"):
+                st.session_state["rover_start_x1"] = -1.80
+                st.session_state["rover_start_x2"] = -1.80
+                st.session_state["rover_target_x1"] = 1.80
+                st.session_state["rover_target_x2"] = 1.80
 
-        start_x1 = st.slider("Start Position x1", -2.4, 2.4, st.session_state.get("rover_start_x1", -1.6), 0.1, key="rover_start_x1")
-        start_x2 = st.slider("Start Position x2", -2.4, 2.4, st.session_state.get("rover_start_x2", 1.0), 0.1, key="rover_start_x2")
-        target_x1 = st.slider("Target Goal x1", -2.4, 2.4, st.session_state.get("rover_target_x1", 1.6), 0.1, key="rover_target_x1")
-        target_x2 = st.slider("Target Goal x2", -2.4, 2.4, st.session_state.get("rover_target_x2", -0.8), 0.1, key="rover_target_x2")
+        start_x1 = st.slider("Start Position x1", -2.4, 2.4, st.session_state.get("rover_start_x1", -1.80), 0.05, key="rover_start_x1")
+        start_x2 = st.slider("Start Position x2", -2.4, 2.4, st.session_state.get("rover_start_x2", 1.20), 0.05, key="rover_start_x2")
+        target_x1 = st.slider("Target Goal x1", -2.4, 2.4, st.session_state.get("rover_target_x1", 1.20), 0.05, key="rover_target_x1")
+        target_x2 = st.slider("Target Goal x2", -2.4, 2.4, st.session_state.get("rover_target_x2", 0.70), 0.05, key="rover_target_x2")
+
+        # Live coordinate guidance and obstacle warning
+        chk_model = model if nav_mode == "Single Model Mission" else saved_comp["model_a"]
+        with no_grad():
+            pts_t = Tensor(np.array([[start_x1, start_x2], [target_x1, target_x2]], dtype=np.float32), requires_grad=False)
+            pts_log = chk_model(pts_t).data
+            exp_p = np.exp(pts_log - np.max(pts_log, axis=-1, keepdims=True))
+            probs_p = exp_p / np.sum(exp_p, axis=-1, keepdims=True)
+            start_haz = float(probs_p[0, 1])
+            target_haz = float(probs_p[1, 1])
+
+        if target_haz > 0.50:
+            st.warning(f"Target is inside an obstacle zone ({target_haz*100:.1f}% hazard)! The rover cannot enter obstacles.")
+        if start_haz > 0.50:
+            st.warning(f"Start is inside an obstacle zone ({start_haz*100:.1f}% hazard)! Choose a position in free space.")
 
         with st.expander("Physical Simulation Tuning", expanded=True):
             step_size = st.slider("Step Size (Speed)", 0.04, 0.25, 0.12, 0.01, key="rover_step_size")
