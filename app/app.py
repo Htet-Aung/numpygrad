@@ -2703,6 +2703,28 @@ def render_neural_pathfinding_tab():
             st.session_state["rover_target_x1"] = 1.20
             st.session_state["rover_target_x2"] = 0.70
 
+    # Process incoming map click events BEFORE sidebar widgets instantiate
+    for map_k in ["rover_plotly_map", "rover_plotly_map_standby", "plotly_rover_a", "plotly_rover_b", "plotly_rover_a_standby", "plotly_rover_b_standby"]:
+        event_dict = st.session_state.get(map_k)
+        if isinstance(event_dict, dict):
+            pts = event_dict.get("selection", {}).get("points", [])
+            if pts and "x" in pts[0] and "y" in pts[0]:
+                cx = float(np.round(pts[0]["x"], 2))
+                cy = float(np.round(pts[0]["y"], 2))
+                click_tag = (map_k, cx, cy)
+                if st.session_state.get("_last_map_click") != click_tag:
+                    st.session_state["_last_map_click"] = click_tag
+                    mode = st.session_state.get("rover_waypoint_click_mode") or st.session_state.get("rover_waypoint_click_mode_sb") or "Start Point (S)"
+                    if "Start" in mode:
+                        st.session_state["rover_start_x1"] = cx
+                        st.session_state["rover_start_x2"] = cy
+                    else:
+                        st.session_state["rover_target_x1"] = cx
+                        st.session_state["rover_target_x2"] = cy
+                    st.session_state.pop("rover_sim", None)
+                    st.session_state.pop("rover_sim_a", None)
+                    st.session_state.pop("rover_sim_b", None)
+
     # ---------------- Sidebar Controls ----------------
     with st.sidebar:
         st.header("Rover Navigation Controls")
@@ -2967,7 +2989,7 @@ def render_neural_pathfinding_tab():
                         step_index=step_idx,
                         title=f"Rover Mission on {dataset_name} ({arch_str}) - Step {step_idx}/{len(trajectory)-1}",
                     )
-                    chart_event = st.plotly_chart(
+                    st.plotly_chart(
                         fig_rover,
                         on_select="rerun",
                         selection_mode=["points"],
@@ -2975,24 +2997,6 @@ def render_neural_pathfinding_tab():
                         config={"displayModeBar": False, "scrollZoom": False},
                         width="stretch",
                     )
-                    if chart_event and hasattr(chart_event, "selection") and chart_event.selection:
-                        sel_pts = chart_event.selection.get("points", [])
-                        if sel_pts and "x" in sel_pts[0] and "y" in sel_pts[0]:
-                            cx = float(np.round(sel_pts[0]["x"], 2))
-                            cy = float(np.round(sel_pts[0]["y"], 2))
-                            mode = st.session_state.get("rover_waypoint_click_mode", "Start Point (S)")
-                            if "Start" in mode:
-                                if st.session_state.get("rover_start_x1") != cx or st.session_state.get("rover_start_x2") != cy:
-                                    st.session_state["rover_start_x1"] = cx
-                                    st.session_state["rover_start_x2"] = cy
-                                    st.session_state.pop("rover_sim", None)
-                                    st.rerun()
-                            else:
-                                if st.session_state.get("rover_target_x1") != cx or st.session_state.get("rover_target_x2") != cy:
-                                    st.session_state["rover_target_x1"] = cx
-                                    st.session_state["rover_target_x2"] = cy
-                                    st.session_state.pop("rover_sim", None)
-                                    st.rerun()
                 else:
                     fig_rover_mpl = plot_rover_path_mpl(model, X, y, trajectory[:step_idx+1], start_pos, target_pos)
                     st.pyplot(fig_rover_mpl)
@@ -3081,7 +3085,7 @@ def render_neural_pathfinding_tab():
                         show_rays=False,
                         title=f"Mission Route Planning on {dataset_name} ({arch_str})",
                     )
-                    chart_event_sb = st.plotly_chart(
+                    st.plotly_chart(
                         fig_rover,
                         on_select="rerun",
                         selection_mode=["points"],
@@ -3089,24 +3093,6 @@ def render_neural_pathfinding_tab():
                         config={"displayModeBar": False, "scrollZoom": False},
                         width="stretch",
                     )
-                    if chart_event_sb and hasattr(chart_event_sb, "selection") and chart_event_sb.selection:
-                        sel_pts = chart_event_sb.selection.get("points", [])
-                        if sel_pts and "x" in sel_pts[0] and "y" in sel_pts[0]:
-                            cx = float(np.round(sel_pts[0]["x"], 2))
-                            cy = float(np.round(sel_pts[0]["y"], 2))
-                            mode = st.session_state.get("rover_waypoint_click_mode_sb", "Start Point (S)")
-                            if "Start" in mode:
-                                if st.session_state.get("rover_start_x1") != cx or st.session_state.get("rover_start_x2") != cy:
-                                    st.session_state["rover_start_x1"] = cx
-                                    st.session_state["rover_start_x2"] = cy
-                                    st.session_state.pop("rover_sim", None)
-                                    st.rerun()
-                            else:
-                                if st.session_state.get("rover_target_x1") != cx or st.session_state.get("rover_target_x2") != cy:
-                                    st.session_state["rover_target_x1"] = cx
-                                    st.session_state["rover_target_x2"] = cy
-                                    st.session_state.pop("rover_sim", None)
-                                    st.rerun()
                 else:
                     fig_rover_mpl = plot_rover_path_mpl(model, X, y, None, start_pos, target_pos)
                     st.pyplot(fig_rover_mpl)
