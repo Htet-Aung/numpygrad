@@ -73,14 +73,19 @@ st.markdown(
         display: none !important;
     }
 
-    /* Remove dead padding at top of sidebar content so 'Experiment Controls' sits right next to the collapse button */
-    [data-testid="stSidebarUserContent"],
+    /* Reset outer sidebar wrapper padding to avoid multiplying nested padding */
+    section[data-testid="stSidebar"] > div:first-child,
     [data-testid="stSidebarContent"],
     section[data-testid="stSidebar"] .block-container {
+        padding: 0 !important;
+    }
+
+    /* Clean balanced padding on sidebar user content without extra right gap */
+    [data-testid="stSidebarUserContent"] {
         padding-top: 0.8rem !important;
-        padding-bottom: 1rem !important;
-        padding-left: 1rem !important;
-        padding-right: 3rem !important;
+        padding-bottom: 1.5rem !important;
+        padding-left: 1.25rem !important;
+        padding-right: 1.25rem !important;
     }
 
     /* Keep sidebar collapse and expand chevron buttons fully functional */
