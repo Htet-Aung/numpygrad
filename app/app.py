@@ -39,42 +39,38 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    /* Transparent header bar to keep sidebar toggle button functional */
+    /* Style the header to be transparent and non-blocking while keeping collapse controls active */
     header[data-testid="stHeader"] {
         background: transparent !important;
+        height: 3rem !important;
         z-index: 100 !important;
     }
 
-    /* Hide right-side header clutter (Deploy button, main menu, footer) */
-    .stDeployButton {
+    /* Hide Deploy button and default Streamlit decorations only */
+    .stDeployButton,
+    [data-testid="stDecoration"],
+    [data-testid="stStatusWidget"],
+    #MainMenu,
+    footer {
         display: none !important;
     }
-    #MainMenu {
-        visibility: hidden !important;
-    }
-    footer {
-        visibility: hidden !important;
-    }
-    [data-testid="stToolbar"] {
-        visibility: hidden !important;
-    }
 
-    /* Ensure sidebar toggle/collapse chevron remains visible & clickable */
+    /* Keep collapsed and expanded sidebar chevron buttons visible and clickable */
     [data-testid="collapsedControl"],
     [data-testid="stSidebarCollapseButton"] {
         visibility: visible !important;
         display: flex !important;
     }
 
-    /* Minimize main content padding */
+    /* Remove dead padding at the top of the main container */
     .block-container {
-        padding-top: 1rem !important;
-        padding-bottom: 1rem !important;
+        padding-top: 1.5rem !important;
+        padding-bottom: 1.5rem !important;
         padding-left: 2rem !important;
         padding-right: 2rem !important;
     }
 
-    /* Eliminate large vertical gap in sidebar */
+    /* Remove dead space at the top of the sidebar */
     [data-testid="stSidebarUserContent"],
     [data-testid="stSidebarContent"],
     section[data-testid="stSidebar"] .block-container {
@@ -84,7 +80,15 @@ st.markdown(
         padding-right: 1rem !important;
     }
 
-    /* Tighten typography margins */
+    /* Keep header margins compact */
+    h1, h2, h3, h4 {
+        margin-top: 0rem !important;
+        margin-bottom: 0.25rem !important;
+        padding-top: 0rem !important;
+        padding-bottom: 0rem !important;
+    }
+
+    /* Typography & card styles */
     .main-header {
         font-size: 1.85rem;
         font-weight: 700;
@@ -103,14 +107,6 @@ st.markdown(
         border-radius: 8px;
         padding: 8px 12px;
         border: 1px solid #e9ecef;
-    }
-
-    /* Reduce vertical margins between elements and headers */
-    h1, h2, h3, h4 {
-        margin-top: 0rem !important;
-        margin-bottom: 0.25rem !important;
-        padding-top: 0rem !important;
-        padding-bottom: 0rem !important;
     }
     div[data-testid="stVerticalBlock"] > div {
         gap: 0.4rem !important;
