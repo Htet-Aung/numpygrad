@@ -188,7 +188,7 @@ def simulate_rover_path(
 
 def find_safe_waypoints(
     model: nn.Module,
-    grid_bounds: Tuple[float, float] = (-2.0, 2.0),
+    grid_bounds: Tuple[float, float] = (-2.2, 2.2),
     resolution: int = 35,
     max_hazard: float = 0.20,
     min_distance: float = 2.0,
@@ -240,9 +240,9 @@ def find_safe_waypoints(
 
     safe_points = grid_points[safe_indices]
 
-    # Partition into left and right quadrants
-    left_mask = safe_points[:, 0] < -0.4
-    right_mask = safe_points[:, 0] > 0.4
+    # Partition into left and right / opposite quadrants
+    left_mask = (safe_points[:, 0] < -0.5)
+    right_mask = (safe_points[:, 0] > 0.5)
 
     best_pair = None
 
