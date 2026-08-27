@@ -39,25 +39,60 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    /* Clean transparent header bar */
+    /* Header styling - transparent background */
     header[data-testid="stHeader"] {
         background: transparent !important;
-        height: 3.5rem !important;
+        height: auto !important;
         z-index: 99 !important;
     }
 
-    /* Hide the Deploy button exclusively across multiple Streamlit DOM versions */
-    [data-testid="stAppDeployButton"],
+    /* Hide deploy button and internal status decorations */
     .stAppDeployButton,
+    [data-testid="stAppDeployButton"],
     .stDeployButton,
     div[data-testid="stToolbarActions"] > button:first-child,
     div[data-testid="stHeaderActionElements"] > button:first-child,
     [data-testid="stDecoration"],
-    [data-testid="stStatusWidget"] {
+    [data-testid="stStatusWidget"],
+    footer {
         display: none !important;
     }
 
-    /* Keep the three-dots options menu visible and functional */
+    /* Position sidebar header absolute in top-right of sidebar so user controls start immediately at the top */
+    [data-testid="stSidebarHeader"] {
+        position: absolute !important;
+        top: 0.8rem !important;
+        right: 0.6rem !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        z-index: 100 !important;
+        background: transparent !important;
+        width: auto !important;
+    }
+
+    [data-testid="stLogoSpacer"] {
+        display: none !important;
+    }
+
+    /* Remove dead padding at top of sidebar content so 'Experiment Controls' sits right next to the collapse button */
+    [data-testid="stSidebarUserContent"],
+    [data-testid="stSidebarContent"],
+    section[data-testid="stSidebar"] .block-container {
+        padding-top: 0.8rem !important;
+        padding-bottom: 1rem !important;
+        padding-left: 1rem !important;
+        padding-right: 3rem !important;
+    }
+
+    /* Keep sidebar collapse and expand chevron buttons fully functional */
+    [data-testid="stSidebarCollapseButton"],
+    [data-testid="stExpandSidebarButton"],
+    [data-testid="collapsedControl"] {
+        visibility: visible !important;
+        display: flex !important;
+    }
+
+    /* Align three-dots options menu with the main studio title */
     #MainMenu,
     [data-testid="stMainMenu"],
     [data-testid="stHeaderActionElements"],
@@ -66,38 +101,18 @@ st.markdown(
         display: block !important;
     }
 
-    /* Keep collapsed and expanded sidebar chevron buttons visible and clickable */
-    [data-testid="collapsedControl"],
-    [data-testid="stSidebarCollapseButton"] {
-        visibility: visible !important;
-        display: flex !important;
+    #MainMenu,
+    [data-testid="stMainMenu"] {
+        margin-top: 2.6rem !important;
+        margin-right: 1rem !important;
     }
 
-    /* Remove dead padding at the top of the main container */
+    /* Compact main block container */
     .block-container {
         padding-top: 1.5rem !important;
         padding-bottom: 1.5rem !important;
         padding-left: 2rem !important;
         padding-right: 2rem !important;
-    }
-
-    /* Remove top gap in all Streamlit sidebar wrapper containers */
-    section[data-testid="stSidebar"] > div:first-child,
-    [data-testid="stSidebarContent"],
-    [data-testid="stSidebarUserContent"],
-    section[data-testid="stSidebar"] .block-container {
-        padding-top: 1rem !important;
-        padding-bottom: 1rem !important;
-        padding-left: 1rem !important;
-        padding-right: 1rem !important;
-    }
-
-    /* Keep header margins compact */
-    h1, h2, h3, h4 {
-        margin-top: 0rem !important;
-        margin-bottom: 0.25rem !important;
-        padding-top: 0rem !important;
-        padding-bottom: 0rem !important;
     }
 
     /* Typography & card styles */
@@ -119,6 +134,14 @@ st.markdown(
         border-radius: 8px;
         padding: 8px 12px;
         border: 1px solid #e9ecef;
+    }
+
+    /* Reduce vertical margins between headers and elements */
+    h1, h2, h3, h4 {
+        margin-top: 0rem !important;
+        margin-bottom: 0.25rem !important;
+        padding-top: 0rem !important;
+        padding-bottom: 0rem !important;
     }
     div[data-testid="stVerticalBlock"] > div {
         gap: 0.4rem !important;
