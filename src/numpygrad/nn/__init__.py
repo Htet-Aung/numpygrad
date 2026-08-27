@@ -19,6 +19,7 @@ from numpygrad.nn.layers import (
     Sigmoid,
     Tanh,
     GELU,
+    Flatten,
 )
 from numpygrad.nn.losses import (
     MSELoss,
@@ -41,6 +42,7 @@ __all__ = [
     "Sigmoid",
     "Tanh",
     "GELU",
+    "Flatten",
     "MSELoss",
     "CrossEntropyLoss",
     "BCEWithLogitsLoss",

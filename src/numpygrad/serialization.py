@@ -27,6 +27,7 @@ _LAYER_REGISTRY: Dict[str, Type[Module]] = {
     "Sigmoid": layers_module.Sigmoid,
     "Tanh": layers_module.Tanh,
     "GELU": layers_module.GELU,
+    "Flatten": layers_module.Flatten,
 }
 
 
@@ -74,6 +75,14 @@ def get_layer_config(layer: Module) -> Dict[str, Any]:
                 "eps": layer.eps,
                 "momentum": layer.momentum,
                 "affine": layer.affine,
+            },
+        }
+    elif isinstance(layer, layers_module.Flatten):
+        return {
+            "type": "Flatten",
+            "config": {
+                "start_dim": layer.start_dim,
+                "end_dim": layer.end_dim,
             },
         }
     elif isinstance(layer, (layers_module.ReLU, layers_module.Sigmoid, layers_module.Tanh, layers_module.GELU)):

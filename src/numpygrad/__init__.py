@@ -14,6 +14,7 @@ from numpygrad.data.dataset import Dataset, TensorDataset
 from numpygrad.data.dataloader import DataLoader
 from numpygrad.serialization import save_model, load_model
 from numpygrad.metrics.classification import accuracy, confusion_matrix
+from numpygrad.nn.layers import Flatten
 from numpygrad.utils.gradcheck import gradcheck
 import numpygrad.nn as nn
 import numpygrad.optim as optim
@@ -35,6 +36,7 @@ __all__ = [
     "load_model",
     "accuracy",
     "confusion_matrix",
+    "Flatten",
     "gradcheck",
     "nn",
     "optim",

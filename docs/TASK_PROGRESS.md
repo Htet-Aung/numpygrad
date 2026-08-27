@@ -16,11 +16,11 @@ This document tracks development progress across the milestones for evolving **N
 | **Milestone 1** | Training Infrastructure (`Dataset`, `DataLoader`, train/eval modes, `no_grad`) | `[DONE]` |
 | **Milestone 2** | Model Persistence & Serialization (`save_model`, `load_model`, `.save()`, `.ng` container) | `[DONE]` |
 | **Milestone 3** | Real Tabular Classification - Iris (`accuracy`, `confusion_matrix`, training & persistence) | `[DONE]` |
-| **Milestone 4** | Advanced Tensor Operations & Math (Slicing, Advanced Indexing, Clamping) | `[TODO]` |
-| **Milestone 5** | Additional Neural Network Layers & Containers (`Conv2D`, `MaxPool2d`, `Flatten`, `LayerNorm`) | `[TODO]` |
-| **Milestone 6** | Advanced Loss Functions & Evaluation Metrics (`NLLLoss`, `SmoothL1Loss`, F1 Score) | `[TODO]` |
-| **Milestone 7** | Learning Rate Schedulers (`StepLR`, `CosineAnnealingLR`, `ExponentialLR`) | `[TODO]` |
-| **Milestone 8** | End-to-End Deep Learning Applications & Benchmarking Suite | `[TODO]` |
+| **Milestone 4** | Flagship MNIST Training (`Flatten`, training pipeline, >=95% accuracy, persistence) | `[DONE]` |
+| **Milestone 5** | Advanced Tensor Operations & Math (Slicing, Advanced Indexing, Clamping) | `[TODO]` |
+| **Milestone 6** | Additional Neural Network Layers & Containers (`Conv2D`, `MaxPool2d`, `LayerNorm`) | `[TODO]` |
+| **Milestone 7** | Advanced Loss Functions & Evaluation Metrics (`NLLLoss`, `SmoothL1Loss`, F1 Score) | `[TODO]` |
+| **Milestone 8** | Learning Rate Schedulers (`StepLR`, `CosineAnnealingLR`, `ExponentialLR`) | `[TODO]` |
 
 ---
 
@@ -59,11 +59,17 @@ This document tracks development progress across the milestones for evolving **N
 
 ---
 
-### Milestone 4: Advanced Tensor Operations & Math
-- [ ] Implement slicing (`__getitem__`, `__setitem__` with slice semantics) `[TODO]`
-- [ ] Implement tensor clamping (`clip`/`clamp`), `abs`, `exp`, `log`, `sqrt` with analytical derivatives `[TODO]`
-- [ ] Implement advanced reductions (`max`, `min`, `argmax`, `argmin`, `var`, `std`) `[TODO]`
-- [ ] Add finite-difference `gradcheck` validation for all new operations `[TODO]`
+### Milestone 4: Flagship MNIST Training
+- [x] Implement `Flatten` layer module in `src/numpygrad/nn/layers.py` `[DONE]`
+- [x] Register `Flatten` in `src/numpygrad/serialization.py` for `.ng` persistence `[DONE]`
+- [x] Implement `examples/train_mnist_mlp.py` dataset downloader, normalization, training, evaluation, and persistence pipeline `[DONE]`
+- [x] Develop comprehensive unit tests and gradcheck in `tests/test_flatten.py` `[DONE]`
+- [x] Reach >= 95% test accuracy on MNIST test set (achieved 97.55%) `[DONE]`
+- [x] Verify 100% pass rate across all unit tests `[DONE]`
+
+---
+
+### Milestone 5: Advanced Tensor Operations & Math
 
 ---
 

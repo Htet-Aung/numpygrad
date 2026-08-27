@@ -206,3 +206,44 @@ class GELU(Module):
 
     def __repr__(self) -> str:
         return "GELU()"
+
+
+class Flatten(Module):
+    """
+    Flattens a contiguous range of dimensions into a single dimension.
+    By default, flattens from dimension 1 to -1 (preserving batch dimension 0).
+    """
+
+    def __init__(self, start_dim: int = 1, end_dim: int = -1) -> None:
+        super().__init__()
+        self.start_dim: int = int(start_dim)
+        self.end_dim: int = int(end_dim)
+
+    def forward(self, x: Union[Tensor, np.ndarray]) -> Tensor:
+        x_t = x if isinstance(x, Tensor) else Tensor(x)
+        shape = x_t.shape
+        ndim = len(shape)
+
+        if ndim == 0:
+            return x_t.reshape(1)
+
+        start = self.start_dim if self.start_dim >= 0 else ndim + self.start_dim
+        end = self.end_dim if self.end_dim >= 0 else ndim + self.end_dim
+
+        if start < 0 or start >= ndim:
+            raise IndexError(f"start_dim {self.start_dim} out of range for tensor with {ndim} dimensions")
+        if end < 0 or end >= ndim:
+            raise IndexError(f"end_dim {self.end_dim} out of range for tensor with {ndim} dimensions")
+        if start > end:
+            raise ValueError(f"start_dim ({self.start_dim}) cannot be greater than end_dim ({self.end_dim})")
+
+        flattened_size = 1
+        for d in range(start, end + 1):
+            flattened_size *= shape[d]
+
+        new_shape = shape[:start] + (flattened_size,) + shape[end + 1:]
+        return x_t.reshape(new_shape)
+
+    def __repr__(self) -> str:
+        return f"Flatten(start_dim={self.start_dim}, end_dim={self.end_dim})"
+

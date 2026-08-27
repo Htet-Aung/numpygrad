@@ -250,13 +250,32 @@ def verify_slicing(eps: float, rtol: float, atol: float) -> bool:
     )
 
 
+def verify_flatten(eps: float, rtol: float, atol: float) -> bool:
+    np.random.seed(42)
+    layer = nn.Flatten(start_dim=1, end_dim=-1)
+    x = Tensor(np.random.randn(4, 3, 4, 4).astype(np.float32), requires_grad=True)
+
+    def f(x_t):
+        return (layer(x_t) ** 2.0).sum()
+
+    return run_gradcheck_diagnostic(
+        func=f,
+        inputs=[x],
+        names=["Tensor X (4, 3, 4, 4)"],
+        eps=eps,
+        rtol=rtol,
+        atol=atol,
+        title="Flatten Layer (4D to 2D)",
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description="NumPyGrad Numerical Gradient Verifier")
     parser.add_argument(
         "--layer",
         type=str,
         default="all",
-        choices=["all", "linear", "relu", "cross_entropy", "batchnorm", "slicing"],
+        choices=["all", "linear", "relu", "cross_entropy", "batchnorm", "slicing", "flatten"],
         help="Target operation or layer to verify (default: all)",
     )
     parser.add_argument("--eps", type=float, default=1e-5, help="Finite difference perturbation epsilon")
@@ -271,6 +290,7 @@ def main():
         "cross_entropy": verify_cross_entropy,
         "batchnorm": verify_batchnorm,
         "slicing": verify_slicing,
+        "flatten": verify_flatten,
     }
 
     if args.layer == "all":
