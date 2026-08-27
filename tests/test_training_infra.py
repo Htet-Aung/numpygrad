@@ -740,4 +740,51 @@ def test_multi_digit_segmentation():
     assert digits_2[1].shape == (28, 28)
 
 
+def test_simulate_rover_path():
+    from app.app import build_model, generate_dataset, plot_plotly_rover_path, plot_rover_path_mpl, HAS_PLOTLY
+    from numpygrad.utils.pathfinding import simulate_rover_path
+
+    X, y = generate_dataset("Two Moons", n_samples=60, noise=0.1, random_state=42)
+    model = build_model(num_layers=2, hidden_dim=8, activation_name="Tanh")
+
+    sim_res = simulate_rover_path(
+        model=model,
+        start_pos=(-1.5, 1.0),
+        target_pos=(1.5, -1.0),
+        max_steps=10,
+        step_size=0.15,
+        num_rays=5,
+        ray_len=0.3,
+        avoidance_weight=2.0,
+    )
+
+    assert "trajectory" in sim_res
+    assert "ray_history" in sim_res
+    assert "hazard_history" in sim_res
+    assert "success" in sim_res
+    assert "collisions" in sim_res
+    assert "steps_taken" in sim_res
+    assert "final_distance" in sim_res
+
+    assert len(sim_res["trajectory"]) >= 2
+    assert isinstance(sim_res["success"], bool)
+    assert isinstance(sim_res["collisions"], int)
+    assert sim_res["final_distance"] >= 0.0
+
+    fig_mpl = plot_rover_path_mpl(model, X, y, sim_res["trajectory"], (-1.5, 1.0), (1.5, -1.0))
+    assert fig_mpl is not None
+
+    if HAS_PLOTLY:
+        fig_plotly = plot_plotly_rover_path(
+            model=model,
+            X=X,
+            y=y,
+            trajectory=sim_res["trajectory"],
+            ray_history=sim_res["ray_history"],
+            start_pos=(-1.5, 1.0),
+            target_pos=(1.5, -1.0),
+        )
+        assert fig_plotly is not None
+
+
 

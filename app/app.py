@@ -40,6 +40,7 @@ from numpygrad.core.tensor import Tensor, no_grad
 import numpygrad.nn as nn
 import numpygrad.optim as optim
 from numpygrad.utils.data import TensorDataset, DataLoader
+from numpygrad.utils.pathfinding import simulate_rover_path
 from numpygrad.serialization import load_model
 
 
@@ -1011,6 +1012,250 @@ def plot_comparison_dashboard_figures(
     ax_acc.legend(loc="lower right", fontsize=8)
 
     return fig_a, fig_b, fig_curves
+
+
+def plot_plotly_rover_path(
+    model: nn.Module,
+    X: np.ndarray,
+    y: np.ndarray,
+    trajectory: List[Tuple[float, float]],
+    ray_history: Optional[List[List[Dict[str, Any]]]] = None,
+    start_pos: Tuple[float, float] = (-1.8, 1.2),
+    target_pos: Tuple[float, float] = (1.8, -1.2),
+    show_rays: bool = True,
+    title: str = "Autonomous Neural Rover Simulation",
+) -> Optional[Any]:
+    """Generates an interactive Plotly visualization of the rover path on the neural potential field."""
+    if not HAS_PLOTLY:
+        return None
+
+    # Full-span decision surface
+    grid_x = np.linspace(-2.5, 2.5, 150).astype(np.float32)
+    grid_y = np.linspace(-2.5, 2.5, 150).astype(np.float32)
+    xx, yy = np.meshgrid(grid_x, grid_y)
+    grid_points = np.c_[xx.ravel(), yy.ravel()].astype(np.float32)
+
+    model.eval()
+    with no_grad():
+        grid_logits = model(Tensor(grid_points, requires_grad=False))
+    exp_logits = np.exp(grid_logits.data - np.max(grid_logits.data, axis=-1, keepdims=True))
+    probs = (exp_logits / np.sum(exp_logits, axis=-1, keepdims=True))[:, 1]
+    Z = probs.reshape(xx.shape)
+
+    fig = go.Figure()
+
+    # 1. Background Obstacle Potential Field
+    fig.add_trace(
+        go.Contour(
+            x=grid_x,
+            y=grid_y,
+            z=Z,
+            colorscale="Spectral",
+            reversescale=True,
+            opacity=0.80,
+            showscale=True,
+            contours=dict(
+                start=0.0,
+                end=1.0,
+                size=0.04,
+                coloring="heatmap",
+                showlines=False,
+            ),
+            line=dict(width=0),
+            colorbar=dict(
+                title=dict(text="Hazard P(Class 1)", font=dict(size=11, color="white")),
+                tickfont=dict(color="white"),
+            ),
+            hoverinfo="x+y+z",
+            name="Hazard Surface",
+        )
+    )
+
+    # 1b. Boundary contour at 0.5
+    fig.add_trace(
+        go.Contour(
+            x=grid_x,
+            y=grid_y,
+            z=Z,
+            showscale=False,
+            contours=dict(start=0.5, end=0.5, size=0.0, coloring="none", showlines=True),
+            line=dict(color="#FFFFFF", width=2, dash="dash"),
+            name="Obstacle Perimeter (P=0.5)",
+            hoverinfo="skip",
+        )
+    )
+
+    # 2. Dataset Scatter Points (faded background reference)
+    mask_0 = (y == 0)
+    mask_1 = (y == 1)
+    fig.add_trace(
+        go.Scatter(
+            x=X[mask_0, 0],
+            y=X[mask_0, 1],
+            mode="markers",
+            name="Free Space Data",
+            marker=dict(color="#3B82F6", size=5, opacity=0.35),
+            hoverinfo="skip",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=X[mask_1, 0],
+            y=X[mask_1, 1],
+            mode="markers",
+            name="Obstacle Data",
+            marker=dict(color="#EF4444", size=5, opacity=0.35),
+            hoverinfo="skip",
+        )
+    )
+
+    # 3. Optional Forward Sensory Rays (Sampled at key steps)
+    if show_rays and ray_history:
+        step_stride = max(1, len(ray_history) // 10)
+        for s_idx in range(0, len(ray_history), step_stride):
+            p_origin = trajectory[s_idx]
+            rays = ray_history[s_idx]
+            for r in rays:
+                r_end = r["endpoint"]
+                h_val = r["hazard"]
+                ray_color = "#38BDF8" if h_val < 0.45 else "#F97316"
+                fig.add_trace(
+                    go.Scatter(
+                        x=[p_origin[0], r_end[0]],
+                        y=[p_origin[1], r_end[1]],
+                        mode="lines",
+                        line=dict(color=ray_color, width=1.2, dash="dot"),
+                        hoverinfo="skip",
+                        showlegend=False,
+                        opacity=0.6,
+                    )
+                )
+
+    # 4. Rover Path Trajectory
+    traj_x = [p[0] for p in trajectory]
+    traj_y = [p[1] for p in trajectory]
+    fig.add_trace(
+        go.Scatter(
+            x=traj_x,
+            y=traj_y,
+            mode="lines+markers",
+            name="Rover Path",
+            line=dict(color="#FBBF24", width=3.5),
+            marker=dict(color="#F59E0B", size=6, symbol="circle"),
+            hovertext=[f"Step {idx}: ({p[0]:.2f}, {p[1]:.2f})" for idx, p in enumerate(trajectory)],
+            hoverinfo="text",
+        )
+    )
+
+    # 5. Start Marker (Green circle)
+    fig.add_trace(
+        go.Scatter(
+            x=[start_pos[0]],
+            y=[start_pos[1]],
+            mode="markers+text",
+            name="Start (S)",
+            text=["START"],
+            textposition="top center",
+            textfont=dict(color="#10B981", size=11),
+            marker=dict(symbol="circle", size=16, color="#10B981", line=dict(color="#FFFFFF", width=2)),
+            hovertext=[f"Start Position: ({start_pos[0]:.2f}, {start_pos[1]:.2f})"],
+            hoverinfo="text",
+        )
+    )
+
+    # 6. Target Marker (Red Diamond / Goal)
+    fig.add_trace(
+        go.Scatter(
+            x=[target_pos[0]],
+            y=[target_pos[1]],
+            mode="markers+text",
+            name="Target (T)",
+            text=["TARGET"],
+            textposition="top center",
+            textfont=dict(color="#EF4444", size=11),
+            marker=dict(symbol="diamond", size=16, color="#EF4444", line=dict(color="#FFFFFF", width=2)),
+            hovertext=[f"Target Goal: ({target_pos[0]:.2f}, {target_pos[1]:.2f})"],
+            hoverinfo="text",
+        )
+    )
+
+    fig.update_layout(
+        title=dict(text=title, font=dict(size=14, color="#F8FAFC")),
+        xaxis=dict(
+            title=dict(text="Coordinate x1", font=dict(color="#CBD5E1")),
+            tickfont=dict(color="#CBD5E1"),
+            gridcolor="#334155",
+            zeroline=False,
+            fixedrange=True,
+            range=[-2.5, 2.5],
+        ),
+        yaxis=dict(
+            title=dict(text="Coordinate x2", font=dict(color="#CBD5E1")),
+            tickfont=dict(color="#CBD5E1"),
+            gridcolor="#334155",
+            zeroline=False,
+            fixedrange=True,
+            range=[-2.5, 2.5],
+        ),
+        dragmode=False,
+        margin=dict(l=20, r=20, t=40, b=20),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+            font=dict(size=10, color="#CBD5E1"),
+            bgcolor="rgba(15, 23, 42, 0.7)",
+        ),
+        paper_bgcolor="#0F172A",
+        plot_bgcolor="#0F172A",
+        height=480,
+    )
+    return fig
+
+
+def plot_rover_path_mpl(
+    model: nn.Module,
+    X: np.ndarray,
+    y: np.ndarray,
+    trajectory: List[Tuple[float, float]],
+    start_pos: Tuple[float, float],
+    target_pos: Tuple[float, float],
+) -> plt.Figure:
+    """Matplotlib fallback rendering of the neural rover path."""
+    fig, ax = plt.subplots(figsize=(6, 5), dpi=100, layout="constrained")
+    xx, yy = np.meshgrid(np.linspace(-2.5, 2.5, 120), np.linspace(-2.5, 2.5, 120))
+    grid_points = np.c_[xx.ravel(), yy.ravel()].astype(np.float32)
+
+    model.eval()
+    with no_grad():
+        grid_logits = model(Tensor(grid_points, requires_grad=False))
+    exp_logits = np.exp(grid_logits.data - np.max(grid_logits.data, axis=-1, keepdims=True))
+    probs = (exp_logits / np.sum(exp_logits, axis=-1, keepdims=True))[:, 1]
+    Z = probs.reshape(xx.shape)
+
+    c = ax.contourf(xx, yy, Z, levels=40, cmap="Spectral_r", alpha=0.80)
+    ax.contour(xx, yy, Z, levels=[0.5], colors="white", linewidths=1.8, linestyles="--")
+    fig.colorbar(c, ax=ax, label="Hazard P(Class 1)")
+
+    # Rover path
+    tx = [p[0] for p in trajectory]
+    ty = [p[1] for p in trajectory]
+    ax.plot(tx, ty, color="#F59E0B", linewidth=2.5, marker="o", markersize=3, label="Rover Trajectory")
+
+    # Start & Target
+    ax.scatter(start_pos[0], start_pos[1], color="#10B981", s=140, edgecolors="black", zorder=10, label="Start (S)")
+    ax.scatter(target_pos[0], target_pos[1], color="#EF4444", s=140, marker="D", edgecolors="black", zorder=10, label="Target (T)")
+
+    ax.set_title("Autonomous Neural Pathfinding", fontsize=11, fontweight="bold")
+    ax.set_xlabel("Coordinate x1", fontsize=9)
+    ax.set_ylabel("Coordinate x2", fontsize=9)
+    ax.set_xlim([-2.5, 2.5])
+    ax.set_ylim([-2.5, 2.5])
+    ax.grid(True, linestyle=":", alpha=0.4)
+    ax.legend(loc="upper right", fontsize=8)
+    return fig
 
 
 # -----------------------------------------------------------------------------
@@ -2296,7 +2541,189 @@ def render_decision_boundary_tab():
 
 
 # -----------------------------------------------------------------------------
-# Tab 2: Handwritten Digit Recognition
+# Tab 2: Autonomous Neural Pathfinding
+# -----------------------------------------------------------------------------
+
+def render_neural_pathfinding_tab():
+    """Renders the Tab 2 Autonomous Neural Pathfinding laboratory."""
+    st.header("Autonomous Neural Pathfinding & Obstacle Avoidance")
+    st.markdown(
+        "Simulate an autonomous rover navigating an environment where the classification decision boundary "
+        "of your trained neural network acts as a **dynamic artificial potential field**. The rover emits forward "
+        "sensory rays that query the neural network in real time to repel away from high-hazard obstacle regions "
+        "while being attracted toward the destination target."
+    )
+
+    if "trained_2d_model" not in st.session_state or st.session_state["trained_2d_model"] is None:
+        st.info(
+            "**Model Required:** No 2D classification model is currently trained.\n\n"
+            "1. Switch to **Tab 1: 2D Decision Boundaries**.\n"
+            "2. Select a topology (e.g. *Two Moons*, *Circles*, or *Spirals*) and click **Start Training**.\n"
+            "3. Return to this tab to launch the Autonomous Neural Rover across the learned obstacle field!"
+        )
+        return
+
+    saved = st.session_state["trained_2d_model"]
+    model = saved["model"]
+    X = saved["X"]
+    y = saved["y"]
+    dataset_name = saved.get("dataset_name", "2D Dataset")
+    arch_str = saved.get("arch_summary", "MLP")
+
+    # ---------------- Sidebar Controls ----------------
+    with st.sidebar:
+        st.header("Rover Navigation Controls")
+        st.subheader("1. Route Waypoints")
+
+        # Preset routes
+        st.caption("Quick Preset Waypoints:")
+        preset_cols = st.columns(2)
+        with preset_cols[0]:
+            if st.button("Moon Gap", width="stretch", key="preset_moon"):
+                st.session_state["rover_start_x1"] = -1.8
+                st.session_state["rover_start_x2"] = 1.2
+                st.session_state["rover_target_x1"] = 1.8
+                st.session_state["rover_target_x2"] = -1.2
+        with preset_cols[1]:
+            if st.button("Spiral Core", width="stretch", key="preset_spiral"):
+                st.session_state["rover_start_x1"] = -2.0
+                st.session_state["rover_start_x2"] = -2.0
+                st.session_state["rover_target_x1"] = 2.0
+                st.session_state["rover_target_x2"] = 2.0
+
+        preset_cols_2 = st.columns(2)
+        with preset_cols_2[0]:
+            if st.button("Circle Bypass", width="stretch", key="preset_circle"):
+                st.session_state["rover_start_x1"] = -2.2
+                st.session_state["rover_start_x2"] = 0.0
+                st.session_state["rover_target_x1"] = 2.2
+                st.session_state["rover_target_x2"] = 0.0
+        with preset_cols_2[1]:
+            if st.button("Top to Bottom", width="stretch", key="preset_diag"):
+                st.session_state["rover_start_x1"] = 0.0
+                st.session_state["rover_start_x2"] = 2.2
+                st.session_state["rover_target_x1"] = 0.0
+                st.session_state["rover_target_x2"] = -2.2
+
+        start_x1 = st.slider("Start Position x1", -2.4, 2.4, st.session_state.get("rover_start_x1", -1.8), 0.1, key="rover_start_x1")
+        start_x2 = st.slider("Start Position x2", -2.4, 2.4, st.session_state.get("rover_start_x2", 1.2), 0.1, key="rover_start_x2")
+        target_x1 = st.slider("Target Goal x1", -2.4, 2.4, st.session_state.get("rover_target_x1", 1.8), 0.1, key="rover_target_x1")
+        target_x2 = st.slider("Target Goal x2", -2.4, 2.4, st.session_state.get("rover_target_x2", -1.2), 0.1, key="rover_target_x2")
+
+        st.subheader("2. Physical Rover Physics")
+        step_size = st.slider("Step Size (Speed)", 0.04, 0.25, 0.12, 0.01, key="rover_step_size")
+        max_steps = st.slider("Max Steps", 15, 100, 50, 5, key="rover_max_steps")
+        num_rays = st.slider("Sensor Ray Count", 3, 9, 5, 2, key="rover_num_rays")
+        ray_len = st.slider("Sensor Ray Length", 0.15, 0.70, 0.35, 0.05, key="rover_ray_len")
+        avoidance_weight = st.slider("Repulsion Weight", 0.5, 6.0, 2.5, 0.25, key="rover_avoid_wt")
+        show_sensor_rays = st.checkbox("Show Sensor Ray Vectors", value=True, key="rover_show_rays")
+
+        launch_rover = st.button("Launch Rover Simulation", type="primary", width="stretch", key="launch_rover_btn")
+
+    # ---------------- Simulation Execution ----------------
+    start_pos = (start_x1, start_x2)
+    target_pos = (target_x1, target_x2)
+
+    # If button pressed or auto-simulate for initial view
+    if launch_rover or "rover_sim" not in st.session_state:
+        sim_result = simulate_rover_path(
+            model=model,
+            start_pos=start_pos,
+            target_pos=target_pos,
+            max_steps=max_steps,
+            step_size=step_size,
+            num_rays=num_rays,
+            ray_len=ray_len,
+            avoidance_weight=avoidance_weight,
+        )
+        st.session_state["rover_sim"] = sim_result
+    else:
+        sim_result = st.session_state["rover_sim"]
+
+    trajectory = sim_result["trajectory"]
+    ray_history = sim_result["ray_history"]
+    hazard_history = sim_result["hazard_history"]
+    success = sim_result["success"]
+    collisions = sim_result["collisions"]
+    steps_taken = sim_result["steps_taken"]
+    final_dist = sim_result["final_distance"]
+
+    # Calculate total path length
+    path_len = 0.0
+    for i in range(1, len(trajectory)):
+        path_len += float(np.linalg.norm(np.array(trajectory[i]) - np.array(trajectory[i-1])))
+
+    # ---------------- Telemetry Dashboard ----------------
+    m_stat, m_steps, m_dist, m_haz, m_goal = st.columns(5)
+    status_label = "Goal Reached" if success else "Max Steps Exceeded"
+    m_stat.metric("Mission Status", status_label)
+    m_steps.metric("Steps Taken", f"{steps_taken} / {max_steps}")
+    m_dist.metric("Path Length", f"{path_len:.2f}")
+    m_haz.metric("Obstacle Collisions", f"{collisions} steps", delta="Safe" if collisions == 0 else f"{collisions} breaches", delta_color="inverse" if collisions > 0 else "normal")
+    m_goal.metric("Target Proximity", f"{final_dist:.2f}", delta="At Target" if success else f"{final_dist:.2f} away")
+
+    # ---------------- Visual Simulation Chart ----------------
+    col_chart, col_details = st.columns([3, 2])
+    with col_chart:
+        if HAS_PLOTLY:
+            fig_rover = plot_plotly_rover_path(
+                model=model,
+                X=X,
+                y=y,
+                trajectory=trajectory,
+                ray_history=ray_history,
+                start_pos=start_pos,
+                target_pos=target_pos,
+                show_rays=show_sensor_rays,
+                title=f"Rover Path on {dataset_name} Potential Field ({arch_str})",
+            )
+            st.plotly_chart(fig_rover, key="plotly_rover_chart", config={"displayModeBar": False, "scrollZoom": False}, width="stretch")
+        else:
+            fig_rover_mpl = plot_rover_path_mpl(model, X, y, trajectory, start_pos, target_pos)
+            st.pyplot(fig_rover_mpl)
+            plt.close(fig_rover_mpl)
+
+    with col_details:
+        st.subheader("Rover Mission Diagnostics")
+        st.markdown(
+            f"""
+            <div style="background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%); border: 1px solid #334155; border-radius: 10px; padding: 1rem; color: white;">
+                <div style="font-size: 0.8rem; text-transform: uppercase; color: #94A3B8; letter-spacing: 0.5px;">Active Potential Field Model</div>
+                <div style="font-size: 1.15rem; font-weight: 700; color: #38BDF8; margin: 0.2rem 0;">{arch_str} on {dataset_name}</div>
+                <div style="font-size: 0.85rem; color: #CBD5E1;">
+                    Start: <code>({start_pos[0]:.2f}, {start_pos[1]:.2f})</code> &rarr; Target: <code>({target_pos[0]:.2f}, {target_pos[1]:.2f})</code>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        st.markdown("<div style='margin-top: 1rem;'></div>", unsafe_allow_html=True)
+        st.caption("How Neural Potential Field Navigation Works:")
+        st.markdown(
+            "1. **Attractive Force ($v_{\\text{goal}}$):** Directly pulls the rover toward the target destination coordinates.\n"
+            "2. **Sensory Ray-Casting:** Casts forward probe points into the trained neural network.\n"
+            "3. **Repulsive Force ($v_{\\text{avoid}}$):** Evaluates $P(\\text{Class } 1)$ at each probe point to repel the rover away from high-hazard obstacle terrain."
+        )
+
+    # ---------------- Detailed Telemetry Table ----------------
+    with st.expander("Step-by-Step Rover Trajectory & Sensor Telemetry", expanded=False):
+        table_rows = []
+        for step_i, (px, py) in enumerate(trajectory):
+            dist_i = float(np.linalg.norm(np.array([px, py]) - np.array(target_pos)))
+            haz_i = hazard_history[step_i] if step_i < len(hazard_history) else 0.0
+            table_rows.append({
+                "Step": step_i,
+                "Position (x1, x2)": f"({px:.3f}, {py:.3f})",
+                "Distance to Goal": round(dist_i, 3),
+                "Hazard P(Class 1)": f"{haz_i * 100:.1f}%",
+                "State": "Collision" if haz_i > 0.55 else ("At Goal" if dist_i <= step_size else "In Transit"),
+            })
+        st.dataframe(table_rows, width="stretch", hide_index=True)
+
+
+# -----------------------------------------------------------------------------
+# Tab 3: Handwritten Digit Recognition
 # -----------------------------------------------------------------------------
 
 @st.cache_resource
@@ -2555,7 +2982,7 @@ def main():
 
     selected_tab = st.segmented_control(
         "Studio Navigation",
-        options=["2D Decision Boundaries", "Handwritten Digit Recognition"],
+        options=["2D Decision Boundaries", "Autonomous Neural Pathfinding", "Handwritten Digit Recognition"],
         default="2D Decision Boundaries",
         label_visibility="collapsed",
     )
@@ -2564,6 +2991,8 @@ def main():
 
     if selected_tab == "2D Decision Boundaries":
         render_decision_boundary_tab()
+    elif selected_tab == "Autonomous Neural Pathfinding":
+        render_neural_pathfinding_tab()
     else:
         with st.sidebar:
             st.markdown("### MNIST Inference Mode")

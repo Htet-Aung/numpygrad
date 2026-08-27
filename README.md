@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Dependencies](https://img.shields.io/badge/Dependencies-Pure%20NumPy-brightgreen.svg)](#)
-[![Tests: 139/139 Passed](https://img.shields.io/badge/Tests-139%2F139%20Passed-success.svg)](#)
+[![Tests: 140/140 Passed](https://img.shields.io/badge/Tests-140%2F140%20Passed-success.svg)](#)
 
 A transparent, educational deep learning library and dynamic tensor automatic differentiation engine built from scratch using **pure Python and NumPy**—with **zero external deep learning framework dependencies** (no PyTorch, JAX, TensorFlow, or Keras).
 
@@ -189,7 +189,8 @@ streamlit run app/app.py
 1. **2D Decision Boundary Studio:**
    - **Single Model Studio:** Interactive synthetic topology selector (Two Moons, Circles, Spirals) with full-span decision contours, smooth surface rendering, explicit $P=0.5$ decision border, live loss/accuracy convergence curves, "Model Ready" status card, direct **Click-to-Predict** on interactive Plotly decision surfaces (`predict_point` under `no_grad()`) with active gold star marker overlay, and expandable **Engine Internals & Computation Trace** drawer (step-by-step tensor activations, Log-Sum-Exp trick numerical breakdown, parameter diagnostics, and layer-by-layer **Gradient Flow Telemetry** bar chart).
    - **Model Capacity Comparison (A vs B):** Side-by-side comparative laboratory evaluating two distinct architectures (e.g. Shallow MLP vs Deep MLP, Tanh vs ReLU) on identical mini-batches, comparing decision boundary complexity, parameter counts, synchronized dual click-to-predict telemetry, and comparative gradient flow diagnostics.
-2. **Handwritten Digit Recognition:** Interactive drawing canvas with Brush Width slider, native Undo/Redo/Clear stroke history state management, pure NumPy connected component segmentation for multi-digit recognition (1-digit, 2-digit, or arbitrary sequence), left-to-right inference, position breakdown badges, and interactive Plotly class probability distribution bar charts evaluated from `examples/mnist_mlp.ng`.
+2. **Autonomous Neural Pathfinding:** Interactive robotics obstacle avoidance simulator where the learned classification boundary acts as a **dynamic artificial potential field**. The rover casts forward sensory rays querying the model in real time to steer around non-linear obstacle hazard zones ($v_{\text{avoid}}$) toward the target goal ($v_{\text{goal}}$), complete with real-time waypoint presets, collision telemetry, and trajectory inspection.
+3. **Handwritten Digit Recognition:** Interactive drawing canvas with Brush Width slider, native Undo/Redo/Clear stroke history state management, pure NumPy connected component segmentation for multi-digit recognition (1-digit, 2-digit, or arbitrary sequence), left-to-right inference, position breakdown badges, and interactive Plotly class probability distribution bar charts evaluated from `examples/mnist_mlp.ng`.
 
 ---
 
