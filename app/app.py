@@ -227,10 +227,19 @@ st.markdown(
         color: #FFFFFF !important;
     }
 
-    /* Hide the default low-contrast canvas toolbar */
-    iframe[title="streamlit_drawable_canvas.drawable_canvas"] + div,
-    div[data-testid="stDrawableCanvas"] div:has(> button) {
+    /* 1. Hide the Download / Save icon */
+    div[data-testid="stDrawableCanvas"] button:first-child,
+    div[data-testid="stDrawableCanvas"] button[title*="Download"] {
         display: none !important;
+    }
+
+    /* 2. Force Undo, Redo, and Trash icons to render bright white */
+    div[data-testid="stDrawableCanvas"] button {
+        background: transparent !important;
+        border: none !important;
+        filter: invert(1) brightness(2) contrast(1.5) !important;
+        opacity: 0.95 !important;
+        cursor: pointer !important;
     }
     </style>
     """,
@@ -760,18 +769,9 @@ def render_mnist_inference_tab():
             height=280,
             width=280,
             drawing_mode="freedraw",
-            display_toolbar=False,
-            key=f"mnist_canvas_{st.session_state.get('canvas_key', 0)}",
+            display_toolbar=True,
+            key="mnist_digit_canvas",
         )
-
-        col_clear, col_classify = st.columns([1, 1])
-        with col_clear:
-            if st.button("🗑️ Clear Canvas", use_container_width=True):
-                # Increment key to reset canvas state cleanly
-                st.session_state["canvas_key"] = st.session_state.get("canvas_key", 0) + 1
-                st.rerun()
-        with col_classify:
-            classify_btn = st.button("🔍 Classify Drawing", type="primary", use_container_width=True)
 
         # Preprocess and show thumbnail
         processed = preprocess_canvas_image(canvas_result)
