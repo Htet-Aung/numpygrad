@@ -164,12 +164,18 @@ python examples/train_iris.py
 NumPyGrad features a multi-tab web application for visual exploration and live inference:
 
 ```bash
+# Launch via one-click runner (Windows batch / PowerShell)
+.\dev.bat
+# or
+.\dev.ps1
+
+# Or standard Streamlit command
 streamlit run app/app.py
 ```
 
 ### Studio Tabs:
-1. **2D Decision Boundaries:** Interactive synthetic dataset playground (Two Moons, Circles, Spirals) with live contour animation, loss/accuracy curves, and layer-by-layer gradient magnitude diagnostics.
-2. **Handwritten Digit Recognition:** An interactive 280x280 canvas allowing users to draw digits with a live white brush. Automatically runs MNIST-standard preprocessing (bounding box crop, padding, LANCZOS downsampling, center-of-mass alignment) and outputs real-time class probability distributions from `examples/mnist_mlp.ng`.
+1. **2D Decision Boundaries:** Interactive synthetic dataset playground (Two Moons, Circles, Spirals) with live decision boundary contour animations, training convergence curves (Loss & Accuracy), and real-time parameter telemetry.
+2. **Handwritten Digit Recognition:** An interactive centered drawing canvas with Brush Width slider, native Undo/Redo/Clear controls, and automated MNIST-standard preprocessing (bounding box cropping, 20x20 scaling, LANCZOS interpolation, center-of-mass positioning). Computes real-time class predictions and probability distributions directly from `examples/mnist_mlp.ng`.
 
 ---
 
