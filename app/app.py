@@ -227,29 +227,29 @@ st.markdown(
         color: #FFFFFF !important;
     }
 
-    /* Reset Canvas Action Button - distinct styling before and after hover */
-    div.stButton > button:has(p:contains("Reset Canvas")),
-    div.stButton > button:has(div:contains("Reset Canvas")),
-    div.stButton > button[data-testid="baseButton-secondary"] {
-        background: linear-gradient(135deg, #4C0519 0%, #881337 100%) !important;
-        color: #FFE4E6 !important;
-        font-weight: 600 !important;
-        font-size: 0.95rem !important;
-        border: 1.5px solid #BE123C !important;
-        border-radius: 8px !important;
-        padding: 0.45rem 1rem !important;
-        box-shadow: 0 2px 8px rgba(190, 18, 60, 0.3) !important;
-        transition: all 0.2s ease-in-out !important;
-        margin-top: 6px !important;
+    /* Canvas Toolbar: Hide Download / Save icon completely */
+    div[data-testid="stDrawableCanvas"] button:first-child,
+    div[data-testid="stDrawableCanvas"] .button-download,
+    div[data-testid="stDrawableCanvas"] button[title*="Download"],
+    div[data-testid="stDrawableCanvas"] button[title*="Save"],
+    div[data-testid="stDrawableCanvas"] button[aria-label*="download"],
+    div[data-testid="stDrawableCanvas"] button[aria-label*="Save"] {
+        display: none !important;
     }
-    div.stButton > button:has(p:contains("Reset Canvas")):hover,
-    div.stButton > button:has(div:contains("Reset Canvas")):hover,
-    div.stButton > button[data-testid="baseButton-secondary"]:hover {
-        background: linear-gradient(135deg, #E11D48 0%, #BE123C 100%) !important;
-        border-color: #FDA4AF !important;
+
+    /* Style Undo, Redo, Trash icons to be bright white by default */
+    div[data-testid="stDrawableCanvas"] button {
+        background-color: transparent !important;
+        border: none !important;
+        opacity: 0.9 !important;
+        margin-right: 8px !important;
+    }
+
+    div[data-testid="stDrawableCanvas"] button svg,
+    div[data-testid="stDrawableCanvas"] button svg path {
+        fill: #FFFFFF !important;
+        stroke: #FFFFFF !important;
         color: #FFFFFF !important;
-        box-shadow: 0 4px 14px rgba(225, 29, 72, 0.5) !important;
-        transform: translateY(-1px) !important;
     }
     </style>
     """,
@@ -765,9 +765,6 @@ def render_mnist_inference_tab():
     with col_canvas:
         st.subheader("Drawing Canvas")
 
-        if "canvas_key_id" not in st.session_state:
-            st.session_state.canvas_key_id = 0
-
         # Canvas controls
         brush_width = st.slider(
             "Brush Width", min_value=8, max_value=36, value=20, step=2,
@@ -783,12 +780,8 @@ def render_mnist_inference_tab():
             width=280,
             drawing_mode="freedraw",
             display_toolbar=True,
-            key=f"mnist_digit_canvas_{st.session_state.canvas_key_id}",
+            key="mnist_digit_canvas",
         )
-
-        if st.button("Reset Canvas", key="reset_canvas_btn", use_container_width=True):
-            st.session_state.canvas_key_id += 1
-            st.rerun()
 
         # Preprocess and show thumbnail
         processed = preprocess_canvas_image(canvas_result)
