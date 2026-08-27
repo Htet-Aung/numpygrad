@@ -169,7 +169,13 @@ class Tensor:
         _op: str = "",
         dtype: Optional[np.dtype] = None,
     ) -> None:
-        if isinstance(data, np.ndarray):
+        if isinstance(data, Tensor) or (hasattr(data, "data") and isinstance(getattr(data, "data"), np.ndarray)):
+            raw_arr = getattr(data, "data")
+            if dtype is not None:
+                self.data: np.ndarray = raw_arr.astype(dtype, copy=False)
+            else:
+                self.data: np.ndarray = raw_arr.copy()
+        elif isinstance(data, np.ndarray):
             if dtype is not None:
                 self.data: np.ndarray = data.astype(dtype, copy=False)
             else:

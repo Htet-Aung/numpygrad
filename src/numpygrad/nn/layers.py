@@ -236,7 +236,10 @@ class Flatten(Module):
         self.end_dim: int = int(end_dim)
 
     def forward(self, x: Union[Tensor, np.ndarray]) -> Tensor:
-        x_t = x if isinstance(x, Tensor) else Tensor(x)
+        if isinstance(x, Tensor) or (hasattr(x, "data") and isinstance(getattr(x, "data"), np.ndarray)):
+            x_t = x
+        else:
+            x_t = Tensor(x)
         shape = x_t.shape
         ndim = len(shape)
 

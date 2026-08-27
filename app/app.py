@@ -782,11 +782,11 @@ def render_mnist_inference_tab():
             height=280,
             width=280,
             drawing_mode="freedraw",
-            display_toolbar=False,
+            display_toolbar=True,
             key=f"mnist_digit_canvas_{st.session_state.canvas_key_id}",
         )
 
-        if st.button("🗑️ Reset Canvas", key="reset_canvas_btn", use_container_width=True):
+        if st.button("Reset Canvas", key="reset_canvas_btn", use_container_width=True):
             st.session_state.canvas_key_id += 1
             st.rerun()
 
