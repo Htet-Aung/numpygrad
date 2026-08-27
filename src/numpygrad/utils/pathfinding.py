@@ -147,19 +147,14 @@ def simulate_rover_path(
         # 5. Combine attractive, repulsive, and tangential wall-following potential vectors
         v_avoid_norm = float(np.linalg.norm(v_avoid))
         if v_avoid_norm > 0.1:
-            # Perpendicular tangent vector [-v_avoid_y, v_avoid_x]
+            # 2D Perpendicular tangent vector [-v_avoid_y, v_avoid_x]
             v_tangent = np.array([-v_avoid[1], v_avoid[0]], dtype=np.float32)
-            v_tan_norm = float(np.linalg.norm(v_tangent))
-            if v_tan_norm > 1e-9:
-                u_tangent = v_tangent / v_tan_norm
-            else:
-                u_tangent = np.zeros(2, dtype=np.float32)
 
-            # Choose tangent direction that aligns forward with v_goal
-            if float(np.dot(u_tangent, v_goal)) < 0.0:
-                u_tangent = -u_tangent
+            # Choose the tangent direction (CW vs CCW) that points toward the goal
+            if float(np.dot(v_tangent, v_goal)) < 0.0:
+                v_tangent = -v_tangent
 
-            v_total = v_goal + avoidance_weight * v_avoid + tangent_weight * u_tangent
+            v_total = v_goal + avoidance_weight * v_avoid + tangent_weight * v_tangent
         else:
             v_total = v_goal
 
