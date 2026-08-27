@@ -783,8 +783,30 @@ def test_simulate_rover_path():
             ray_history=sim_res["ray_history"],
             start_pos=(-1.5, 1.0),
             target_pos=(1.5, -1.0),
+            step_index=2,
         )
         assert fig_plotly is not None
+
+
+def test_dual_model_navigation_race():
+    from app.app import build_model, generate_dataset, plot_plotly_rover_path, HAS_PLOTLY
+    from numpygrad.utils.pathfinding import simulate_rover_path
+
+    X, y = generate_dataset("Spirals", n_samples=80, noise=0.1, random_state=42)
+    model_a = build_model(num_layers=1, hidden_dim=4, activation_name="Tanh")
+    model_b = build_model(num_layers=3, hidden_dim=16, activation_name="ReLU")
+
+    sim_a = simulate_rover_path(model=model_a, start_pos=(-2.0, -2.0), target_pos=(2.0, 2.0), max_steps=12)
+    sim_b = simulate_rover_path(model=model_b, start_pos=(-2.0, -2.0), target_pos=(2.0, 2.0), max_steps=12)
+
+    assert "trajectory" in sim_a and "trajectory" in sim_b
+    assert len(sim_a["trajectory"]) > 1
+    assert len(sim_b["trajectory"]) > 1
+
+    if HAS_PLOTLY:
+        fig_a = plot_plotly_rover_path(model_a, X, y, sim_a["trajectory"], sim_a["ray_history"], (-2.0, -2.0), (2.0, 2.0), step_index=1)
+        fig_b = plot_plotly_rover_path(model_b, X, y, sim_b["trajectory"], sim_b["ray_history"], (-2.0, -2.0), (2.0, 2.0), step_index=1)
+        assert fig_a is not None and fig_b is not None
 
 
 
