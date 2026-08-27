@@ -21,6 +21,7 @@ This document tracks phase-by-phase development progress for the **NumPyGrad** p
 | **Phase 6** | First-Order Optimizers (`SGD`, `AdamW`) | `[DONE]` |
 | **Phase 7** | DAG Visualization & Diagnostic Utilities | `[DONE]` |
 | **Phase 8** | Integration Tests & End-to-End Deep Learning Demos | `[DONE]` |
+| **Phase 9** | Interactive Streamlit Visualizer (`app/app.py`) | `[DONE]` |
 
 ---
 
@@ -86,3 +87,11 @@ This document tracks phase-by-phase development progress for the **NumPyGrad** p
 - [x] Full unit test suite with 100% `gradcheck` pass rate across all layers and losses `[DONE]`
 - [x] Demo 1: Multi-Layer Perceptron on 2D synthetic non-linear classification (Moons / Spirals) `[DONE]`
 - [x] Dataset and DataLoader batch iteration and shuffling pipeline `[DONE]`
+
+---
+
+### Phase 9: Interactive Streamlit Visualizer (`app/app.py`)
+- [x] Implement Streamlit web UI with dataset, architecture, and hyperparameter controls `[DONE]`
+- [x] Implement live decision boundary contour plotting and real-time metric tracking `[DONE]`
+- [x] Implement post-training layer-by-layer gradient norm diagnostic bar chart `[DONE]`
+- [x] Document interactive studio usage in README.md `[DONE]`
