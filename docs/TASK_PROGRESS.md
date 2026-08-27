@@ -74,9 +74,9 @@ This document tracks development progress across all phases and milestones for *
 - [x] Implement `model.summary(input_shape)` generating formatted ASCII tables with layer output shapes, parameter counts, buffer tracking, and estimated memory footprint in `src/numpygrad/utils/summary.py` `[DONE]`
 - [x] Implement CPU performance benchmarking suite in `benchmarks/benchmark_cpu.py` comparing forward, backward, and optimizer throughput against PyTorch `[DONE]`
 - [x] Build multi-tab interactive Streamlit web application in `app/app.py`:
-  - **Tab 1 (2D Decision Boundaries):** Interactive synthetic topology selector, real-time decision boundary contour visualization, live loss/accuracy convergence curves, and gradient telemetry.
+  - **Tab 1 (2D Decision Boundaries):** Interactive synthetic topology selector, real-time decision boundary contour visualization, live loss/accuracy convergence curves, gradient telemetry, session model persistence (`st.session_state["trained_2d_model"]`), "Model Ready" status card, interactive real-time coordinate evaluation with direct **Click-to-Predict** on Plotly decision contours (`predict_point` under `no_grad()`) with gold star marker overlay, expandable "Engine Internals & Computation Trace" drawer, and side-by-side **Model Capacity Comparison (A vs B)** mode (dual model configuration, synchronized batch training, side-by-side decision boundaries, comparative loss & accuracy convergence curves, and synchronized coordinate testing).
   - **Tab 2 (Handwritten Digit Recognition):** Interactive drawing canvas with Brush Width slider, native Undo/Redo/Clear controls, MNIST-standard center-of-mass preprocessing, live Top-3 class predictions, and probability bar chart.
 - [x] Configure hot-reloading in `.streamlit/config.toml` and single-click startup runners (`dev.bat`, `dev.ps1`) `[DONE]`
 - [x] Packaging configuration in `pyproject.toml` supporting editable installation (`pip install -e .`) and app extras (`pip install -e ".[app]"`) `[DONE]`
 - [x] Master documentation (`README.md`, `docs/PRD.md`, `docs/TASK_PROGRESS.md`) updated and verified `[DONE]`
-- [x] Full test suite passing with 100% success rate (**129/129 passed in <2s**) `[DONE]`
+- [x] Full test suite passing with 100% success rate (**137/137 passed**) `[DONE]`

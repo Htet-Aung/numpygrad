@@ -127,7 +127,9 @@ numpygrad/
 - Functions: `save_model(model, filepath)` and `load_model(filepath)`.
 
 ### 4.7 Interactive Studio (`app/app.py`)
-- **Tab 1 (2D Decision Boundaries):** Interactive 2D dataset generator (Two Moons, Circles, Spirals), real-time contour plot updates, live loss/accuracy tracking, and gradient telemetry.
+- **Tab 1 (2D Decision Boundaries):**
+  - **Single Model Studio:** Interactive 2D dataset generator (Two Moons, Circles, Spirals), real-time contour plot updates, live loss/accuracy tracking, "Model Ready" status card, interactive coordinate testing with direct **Click-to-Predict** on Plotly decision contours under `with no_grad():` with gold star marker overlay, and expandable **Engine Internals & Computation Trace** drawer (step-by-step activations, Log-Sum-Exp trick breakdown, and parameter diagnostics).
+  - **Model Capacity Comparison (A vs B):** Side-by-side comparative laboratory evaluating two distinct architectures on identical mini-batches, comparing decision boundary complexity, parameter counts, and synchronized dual click-to-predict telemetry without text truncation.
 - **Tab 2 (Handwritten Digit Recognition):** Interactive drawing canvas, Brush Width slider, native Undo/Redo/Clear controls, MNIST center-of-mass preprocessing, live Top-3 class predictions, and probability bar chart.
 
 ---
@@ -145,4 +147,4 @@ numpygrad/
    - Numerically stable sigmoid formulation with strict gradient clipping.
 
 3. **100% Test Coverage & Determinism**:
-   - Complete automated test suite covering autograd, operators, layers, serialization, data loading, and metrics (**129/129 passing**).
+   - Complete automated test suite covering autograd, operators, layers, serialization, data loading, and metrics (**137/137 passing**).

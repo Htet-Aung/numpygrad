@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Dependencies](https://img.shields.io/badge/Dependencies-Pure%20NumPy-brightgreen.svg)](#)
-[![Tests: 129/129 Passed](https://img.shields.io/badge/Tests-129%2F129%20Passed-success.svg)](#)
+[![Tests: 137/137 Passed](https://img.shields.io/badge/Tests-137%2F137%20Passed-success.svg)](#)
 
 A transparent, educational deep learning library and dynamic tensor automatic differentiation engine built from scratch using **pure Python and NumPy**—with **zero external deep learning framework dependencies** (no PyTorch, JAX, TensorFlow, or Keras).
 
@@ -41,7 +41,7 @@ NumPyGrad trains multi-layer perceptrons to resolve complex non-linear classific
 - **Execution Modes & Autograd Guards:** Recursive `model.train()` and `model.eval()` mode propagation, plus `no_grad()` context managers and decorators.
 - **Model Inspection & Diagnostics:** `model.summary(input_shape)` generating ASCII reports with layer output shapes, parameter counts, and memory footprint estimations.
 - **Single-File Model Persistence:** Native `.ng` container serialization (`save_model` / `load_model` / `model.save()`) packaging architecture topology and compressed weights.
-- **Interactive Streamlit Studio:** Multi-tab visualizer with real-time 2D decision boundary training and a live interactive MNIST handwritten digit drawing canvas.
+- **Interactive Streamlit Studio:** Multi-tab visualizer with real-time 2D decision boundary training, live coordinate inference with boundary marker overlay, expandable computation trace drawer, side-by-side **Model Capacity Comparison (A vs B)** laboratory, and interactive MNIST handwritten digit drawing canvas.
 - **Mathematical Rigor:** 100% test coverage with centered finite-difference numerical gradient checks (`gradcheck` relative error $< 10^{-10}$).
 
 ---
@@ -173,7 +173,7 @@ python examples/train_iris.py
 
 ## Interactive Studio (Streamlit Web Dashboard)
 
-NumPyGrad features a multi-tab web application for visual exploration and live inference:
+NumPyGrad features an interactive multi-mode web studio for visual experimentation and live inference:
 
 ```bash
 # Launch via one-click runner (Windows batch / PowerShell)
@@ -185,9 +185,11 @@ NumPyGrad features a multi-tab web application for visual exploration and live i
 streamlit run app/app.py
 ```
 
-### Studio Tabs:
-1. **2D Decision Boundaries:** Interactive synthetic dataset playground (Two Moons, Circles, Spirals) with live decision boundary contour animations, training convergence curves (Loss & Accuracy), and real-time parameter telemetry.
-2. **Handwritten Digit Recognition:** An interactive centered drawing canvas with Brush Width slider, native Undo/Redo/Clear controls, and automated MNIST-standard preprocessing (bounding box cropping, 20x20 scaling, LANCZOS interpolation, center-of-mass positioning). Computes real-time class predictions and probability distributions directly from `examples/mnist_mlp.ng`.
+### Studio Features:
+1. **2D Decision Boundary Studio:**
+   - **Single Model Studio:** Interactive synthetic dataset playground (Two Moons, Circles, Spirals) with live contour animations, loss/accuracy curves, "Model Ready" status card, direct **Click-to-Predict** on interactive Plotly decision surfaces, slider controls under `with no_grad():` with gold star test point overlay, and expandable **Engine Internals & Computation Trace** drawer (step-by-step activations, Log-Sum-Exp trick breakdown, and parameter diagnostics).
+   - **Model Capacity Comparison (A vs B):** Side-by-side comparative laboratory evaluating two distinct architectures (e.g. Shallow MLP vs Deep MLP, Tanh vs ReLU) on identical mini-batches, comparing decision boundary complexity, parameter counts, and synchronized dual click-to-predict telemetry.
+2. **Handwritten Digit Recognition:** Interactive drawing canvas with Brush Width slider, native Undo/Redo/Clear controls, MNIST center-of-mass preprocessing, live Top-3 class predictions, and probability bar chart evaluated from `examples/mnist_mlp.ng`.
 
 ---
 

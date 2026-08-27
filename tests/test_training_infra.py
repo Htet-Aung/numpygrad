@@ -519,3 +519,169 @@ def test_canonical_training_and_evaluation_pipeline():
 
     assert not np.isnan(avg_val_loss)
     assert 0.0 <= val_accuracy <= 1.0
+
+
+# =============================================================================
+# 7. Studio 2D Interactive Inference Pipeline Unit Tests
+# =============================================================================
+
+def test_studio_2d_dataset_generator():
+    from app.app import generate_dataset
+    for dataset_name in ["Two Moons", "Concentric Circles", "Spirals"]:
+        X, y = generate_dataset(dataset_name, n_samples=200, noise=0.1, random_state=42)
+        assert X.shape == (200, 2)
+        assert y.shape == (200,)
+        assert X.dtype == np.float32
+        assert np.isin(y, [0, 1]).all()
+
+
+def test_studio_build_model_and_summary():
+    from app.app import build_model, get_architecture_summary
+    model1 = build_model(num_layers=1, hidden_dim=16, activation_name="ReLU")
+    assert get_architecture_summary(model1) == "2 → 16 → 2"
+
+    model2 = build_model(num_layers=3, hidden_dim=64, activation_name="Tanh", use_batchnorm=True)
+    assert get_architecture_summary(model2) == "2 → 64 → 64 → 64 → 2"
+
+    model3 = build_model(num_layers=2, hidden_dim=32, activation_name="GELU", dropout_p=0.2)
+    assert get_architecture_summary(model3) == "2 → 32 → 32 → 2"
+
+
+def test_studio_predict_point_inference():
+    from app.app import build_model, predict_point
+    model = build_model(num_layers=2, hidden_dim=16, activation_name="ReLU")
+    pred_class, conf, probs = predict_point(model, 0.5, -0.5)
+
+    assert pred_class in (0, 1)
+    assert 0.0 <= conf <= 1.0
+    assert len(probs) == 2
+    assert np.isclose(np.sum(probs), 1.0, atol=1e-5)
+    assert np.isclose(probs[pred_class], conf)
+    assert not model.training
+
+
+def test_studio_predict_point_batchnorm():
+    from app.app import build_model, predict_point
+    model = build_model(num_layers=2, hidden_dim=16, activation_name="ReLU", use_batchnorm=True)
+    
+    # Populate batchnorm running statistics with training step
+    model.train()
+    dummy_input = Tensor(np.random.randn(10, 2).astype(np.float32))
+    _ = model(dummy_input)
+
+    # Evaluate point
+    pred_class, conf, probs = predict_point(model, 1.2, -0.8)
+    assert pred_class in (0, 1)
+    assert 0.0 <= conf <= 1.0
+    assert np.isclose(np.sum(probs), 1.0, atol=1e-5)
+
+
+def test_studio_trace_forward_pass():
+    from app.app import build_model, trace_forward_pass
+    model = build_model(num_layers=2, hidden_dim=16, activation_name="ReLU")
+    steps, softmax_details = trace_forward_pass(model, 0.75, -0.25)
+
+    # Step 0 is input, followed by 2 Linear layers + 2 ReLU layers (or Head Linear) = total steps
+    assert len(steps) >= 3
+    assert steps[0]["Step"] == 0
+    assert steps[0]["Output Shape"] == "[1, 2]"
+    assert steps[-1]["Output Shape"] == "[1, 2]"
+
+    # Softmax breakdown verification
+    assert "raw_logits" in softmax_details
+    assert "shifted_logits" in softmax_details
+    assert "probabilities" in softmax_details
+    assert len(softmax_details["probabilities"]) == 2
+    assert np.isclose(sum(softmax_details["probabilities"]), 1.0, atol=1e-5)
+
+
+def test_studio_parameter_diagnostics():
+    from app.app import build_model, get_parameter_diagnostics, get_layer_raw_weights
+    model = build_model(num_layers=2, hidden_dim=32, activation_name="Tanh")
+    diagnostics = get_parameter_diagnostics(model)
+
+    assert len(diagnostics) > 0
+    for diag in diagnostics:
+        assert "Layer" in diag
+        assert "Param" in diag
+        assert "Shape" in diag
+        assert isinstance(diag["Shape"], str)
+        assert "Count" in diag
+        assert diag["Count"] > 0
+        assert isinstance(diag["Count"], int)
+        assert "L2 Norm" in diag
+        assert isinstance(diag["L2 Norm"], float)
+        assert "Mean" in diag
+        assert isinstance(diag["Mean"], float)
+        assert "Std" in diag
+        assert isinstance(diag["Std"], float)
+        assert "Sparsity" in diag
+        assert isinstance(diag["Sparsity"], str)
+        # Ensure no raw ndarrays or non-serializable objects in tabular diagnostics
+        assert "Array" not in diag
+        assert "Values" not in diag
+
+    raw_weights = get_layer_raw_weights(model)
+    assert len(raw_weights) > 0
+    for k, v in raw_weights.items():
+        assert isinstance(k, str)
+        assert isinstance(v, np.ndarray)
+
+
+def test_studio_comparison_dashboard_figures():
+    from app.app import build_model, generate_dataset, plot_comparison_dashboard_figures
+    X, y = generate_dataset("Spirals", n_samples=100, noise=0.1, random_state=42)
+    model_a = build_model(num_layers=1, hidden_dim=4, activation_name="Tanh")
+    model_b = build_model(num_layers=2, hidden_dim=16, activation_name="ReLU")
+
+    fig_a, fig_b, fig_c = plot_comparison_dashboard_figures(
+        model_a, model_b, X, y,
+        loss_hist_a=[0.69, 0.65], acc_hist_a=[50.0, 60.0],
+        loss_hist_b=[0.69, 0.40], acc_hist_b=[50.0, 85.0],
+        test_point=(0.5, -0.5),
+        title_a="Model A Test",
+        title_b="Model B Test",
+    )
+    assert fig_a is not None
+    assert fig_b is not None
+    assert fig_c is not None
+
+
+def test_studio_dual_model_training():
+    from app.app import build_model, generate_dataset, predict_point
+    X, y = generate_dataset("Two Moons", n_samples=80, noise=0.1, random_state=42)
+    model_a = build_model(num_layers=1, hidden_dim=4, activation_name="Tanh")
+    model_b = build_model(num_layers=2, hidden_dim=16, activation_name="ReLU")
+
+    crit_a = nn.CrossEntropyLoss()
+    crit_b = nn.CrossEntropyLoss()
+    opt_a = optim.SGD(model_a.parameters(), lr=0.1)
+    opt_b = optim.AdamW(model_b.parameters(), lr=0.05)
+
+    dataset = TensorDataset(X, y)
+    loader = DataLoader(dataset, batch_size=40, shuffle=True)
+
+    # Train for 2 epochs
+    for _ in range(2):
+        for bx, by in loader:
+            opt_a.zero_grad()
+            l_a = crit_a(model_a(bx), by)
+            l_a.backward()
+            opt_a.step()
+
+            opt_b.zero_grad()
+            l_b = crit_b(model_b(bx), by)
+            l_b.backward()
+            opt_b.step()
+
+    # Inference comparison
+    pred_a, conf_a, probs_a = predict_point(model_a, 0.0, 0.0)
+    pred_b, conf_b, probs_b = predict_point(model_b, 0.0, 0.0)
+
+    assert pred_a in (0, 1)
+    assert pred_b in (0, 1)
+    assert 0.0 <= conf_a <= 1.0
+    assert 0.0 <= conf_b <= 1.0
+
+
+

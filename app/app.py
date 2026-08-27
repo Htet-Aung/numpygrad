@@ -12,7 +12,7 @@ Tabs:
 import sys
 import os
 import time
-from typing import Tuple, List, Dict, Any
+from typing import Tuple, List, Dict, Any, Optional, Union
 
 # Ensure src/ is on the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
@@ -23,6 +23,12 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import streamlit as st
 from PIL import Image
+
+try:
+    import plotly.graph_objects as go
+    HAS_PLOTLY = True
+except ImportError:
+    HAS_PLOTLY = False
 
 from numpygrad.core.tensor import Tensor, no_grad
 import numpygrad.nn as nn
@@ -243,6 +249,79 @@ st.markdown(
         border-radius: 8px !important;
         background-color: #000000 !important;
     }
+
+    /* Model Ready Status Banner */
+    .model-ready-card {
+        background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%);
+        border: 1px solid #334155;
+        border-radius: 12px;
+        padding: 1.15rem 1.4rem;
+        color: #F8FAFC;
+        margin-bottom: 0.8rem;
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.35);
+    }
+    .model-ready-title {
+        font-size: 1.22rem;
+        font-weight: 700;
+        color: #38BDF8;
+        margin-bottom: 0.2rem;
+        letter-spacing: -0.01em;
+    }
+    .model-ready-subtitle {
+        font-size: 0.86rem;
+        color: #94A3B8;
+        margin-bottom: 0.6rem;
+    }
+    .model-ready-badge {
+        display: inline-block;
+        background-color: rgba(56, 189, 248, 0.12);
+        color: #38BDF8;
+        border: 1px solid rgba(56, 189, 248, 0.28);
+        padding: 3px 9px;
+        border-radius: 6px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        margin-left: 6px;
+    }
+
+    /* Probability distribution bars */
+    .prob-bar-container {
+        margin-top: 0.4rem;
+        margin-bottom: 0.5rem;
+    }
+    .prob-bar-label {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.86rem;
+        font-weight: 600;
+        margin-bottom: 0.25rem;
+    }
+    .prob-bar-bg {
+        background-color: #E2E8F0;
+        border-radius: 6px;
+        height: 12px;
+        overflow: hidden;
+    }
+    .prob-bar-fill-0 {
+        background: linear-gradient(90deg, #3B82F6 0%, #60A5FA 100%);
+        height: 100%;
+        border-radius: 6px;
+    }
+    .prob-bar-fill-1 {
+        background: linear-gradient(90deg, #EF4444 0%, #F87171 100%);
+        height: 100%;
+        border-radius: 6px;
+    }
+
+    /* Prevent stMetric value and label truncation in multi-column layouts */
+    div[data-testid="stMetricValue"] > div {
+        font-size: 1.25rem !important;
+        white-space: nowrap !important;
+    }
+    div[data-testid="stMetricLabel"] > div {
+        font-size: 0.82rem !important;
+        white-space: nowrap !important;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -355,9 +434,274 @@ def build_model(
     return nn.Sequential(*layers)
 
 
+def get_architecture_summary(model: nn.Sequential) -> str:
+    """Returns a concise arrow notation of network layer dimensions (e.g., '2 → 32 → 32 → 2')."""
+    dims = [2]
+    for layer in model:
+        if isinstance(layer, nn.Linear):
+            dims.append(layer.out_features)
+    return " → ".join(str(d) for d in dims)
+
+
+def predict_point(model: nn.Module, x: float, y: float) -> Tuple[int, float, np.ndarray]:
+    """
+    Evaluates a single 2D coordinate through the trained model under no_grad().
+
+    Args:
+        model: Trained neural network model.
+        x: Feature x1 coordinate.
+        y: Feature x2 coordinate.
+
+    Returns:
+        predicted_class (int): 0 or 1.
+        confidence (float): Probability of the predicted class in [0, 1].
+        probs (np.ndarray): 1D array of shape (2,) with class probabilities [P(Class 0), P(Class 1)].
+    """
+    model.eval()
+    input_tensor = Tensor(np.array([[x, y]], dtype=np.float32), requires_grad=False)
+    with no_grad():
+        logits = model(input_tensor)
+    probs = stable_softmax(logits.data[0])
+    pred_class = int(np.argmax(probs))
+    conf = float(probs[pred_class])
+    return pred_class, conf, probs
+
+
+def trace_forward_pass(model: nn.Sequential, x: float, y: float) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """
+    Executes a step-by-step forward pass through each layer of the model,
+    capturing intermediate activations, shapes, and summary statistics.
+
+    Returns:
+        steps: List of step dictionaries with layer names, shapes, and activation stats (PyArrow-safe).
+        softmax_details: Breakdown of intermediate values during stable softmax calculation.
+    """
+    model.eval()
+    curr = Tensor(np.array([[x, y]], dtype=np.float32), requires_grad=False)
+    
+    steps: List[Dict[str, Any]] = [
+        {
+            "Step": 0,
+            "Layer / Operation": "Input Coordinate Tensor",
+            "Layer Type": "Tensor",
+            "Output Shape": str(list(curr.shape)),
+            "Min": float(round(float(curr.data.min()), 4)),
+            "Max": float(round(float(curr.data.max()), 4)),
+            "Mean": float(round(float(curr.data.mean()), 4)),
+            "L2 Norm": float(round(float(np.linalg.norm(curr.data)), 4)),
+        }
+    ]
+    
+    with no_grad():
+        for idx, layer in enumerate(model):
+            curr = layer(curr)
+            data = curr.data
+            steps.append({
+                "Step": idx + 1,
+                "Layer / Operation": f"Layer {idx}: {layer.__class__.__name__}",
+                "Layer Type": layer.__class__.__name__,
+                "Output Shape": str(list(data.shape)),
+                "Min": float(round(float(data.min()), 4)),
+                "Max": float(round(float(data.max()), 4)),
+                "Mean": float(round(float(data.mean()), 4)),
+                "L2 Norm": float(round(float(np.linalg.norm(data)), 4)),
+            })
+
+    final_logits = curr.data[0]
+    max_logit = float(np.max(final_logits))
+    shifted = final_logits - max_logit
+    exp_shifted = np.exp(shifted)
+    sum_exp = float(np.sum(exp_shifted))
+    probs = exp_shifted / sum_exp
+
+    softmax_details = {
+        "raw_logits": [round(float(v), 4) for v in final_logits],
+        "max_logit": round(max_logit, 4),
+        "shifted_logits": [round(float(v), 4) for v in shifted],
+        "exp_shifted": [round(float(v), 4) for v in exp_shifted],
+        "sum_exp": round(sum_exp, 4),
+        "probabilities": [round(float(v), 4) for v in probs],
+    }
+
+    return steps, softmax_details
+
+
+def get_parameter_diagnostics(model: nn.Sequential) -> List[Dict[str, Any]]:
+    """
+    Collects parameter shapes, element counts, norms, and distribution statistics
+    across all registered parameters in the model.
+    Returns PyArrow-safe primitive data types for tabular Streamlit rendering.
+    """
+    diagnostics: List[Dict[str, Any]] = []
+    for layer_idx, layer in enumerate(model):
+        if hasattr(layer, "weight") and layer.weight is not None:
+            w_data = layer.weight.data
+            diagnostics.append({
+                "Layer": f"Layer {layer_idx} ({layer.__class__.__name__})",
+                "Param": "weight (W)",
+                "Shape": str(list(w_data.shape)),
+                "Count": int(w_data.size),
+                "Mean": float(round(float(np.mean(w_data)), 4)),
+                "Std": float(round(float(np.std(w_data)), 4)),
+                "L2 Norm": float(round(float(np.linalg.norm(w_data)), 4)),
+                "Sparsity": f"{(np.sum(np.abs(w_data) < 1e-4) / w_data.size) * 100:.1f}%",
+            })
+        if hasattr(layer, "bias") and layer.bias is not None:
+            b_data = layer.bias.data
+            diagnostics.append({
+                "Layer": f"Layer {layer_idx} ({layer.__class__.__name__})",
+                "Param": "bias (b)",
+                "Shape": str(list(b_data.shape)),
+                "Count": int(b_data.size),
+                "Mean": float(round(float(np.mean(b_data)), 4)),
+                "Std": float(round(float(np.std(b_data)), 4)),
+                "L2 Norm": float(round(float(np.linalg.norm(b_data)), 4)),
+                "Sparsity": f"{(np.sum(np.abs(b_data) < 1e-4) / b_data.size) * 100:.1f}%",
+            })
+    return diagnostics
+
+
+def get_layer_raw_weights(model: nn.Sequential) -> Dict[str, np.ndarray]:
+    """Extracts raw parameter ndarrays keyed by human-readable parameter identifier."""
+    raw_weights: Dict[str, np.ndarray] = {}
+    for layer_idx, layer in enumerate(model):
+        if hasattr(layer, "weight") and layer.weight is not None:
+            raw_weights[f"Layer {layer_idx} ({layer.__class__.__name__}) - weight"] = layer.weight.data
+        if hasattr(layer, "bias") and layer.bias is not None:
+            raw_weights[f"Layer {layer_idx} ({layer.__class__.__name__}) - bias"] = layer.bias.data
+    return raw_weights
+
+
 # -----------------------------------------------------------------------------
 # Decision Boundary & Training Curves Plotting
 # -----------------------------------------------------------------------------
+
+def plot_plotly_decision_boundary(
+    model: nn.Module,
+    X: np.ndarray,
+    y: np.ndarray,
+    test_point: Optional[Tuple[float, float]] = None,
+    title: str = "Learned Decision Boundary (Click to Predict)",
+) -> Optional[Any]:
+    """Generates an interactive Plotly decision boundary contour plot with point click selection."""
+    if not HAS_PLOTLY:
+        return None
+
+    x_min, x_max = float(X[:, 0].min() - 0.5), float(X[:, 0].max() + 0.5)
+    y_min, y_max = float(X[:, 1].min() - 0.5), float(X[:, 1].max() + 0.5)
+    
+    grid_x = np.linspace(x_min, x_max, 100).astype(np.float32)
+    grid_y = np.linspace(y_min, y_max, 100).astype(np.float32)
+    xx, yy = np.meshgrid(grid_x, grid_y)
+    grid_points = np.c_[xx.ravel(), yy.ravel()].astype(np.float32)
+
+    model.eval()
+    grid_tensor = Tensor(grid_points, requires_grad=False)
+    with no_grad():
+        grid_logits = model(grid_tensor)
+
+    # Softmax probability of class 1
+    exp_logits = np.exp(grid_logits.data - np.max(grid_logits.data, axis=-1, keepdims=True))
+    probs = (exp_logits / np.sum(exp_logits, axis=-1, keepdims=True))[:, 1]
+    Z = probs.reshape(xx.shape)
+
+    fig = go.Figure()
+
+    # 1. Decision Boundary Contour Heatmap
+    fig.add_trace(
+        go.Contour(
+            x=grid_x,
+            y=grid_y,
+            z=Z,
+            colorscale="Spectral",
+            reversescale=True,
+            opacity=0.82,
+            contours=dict(start=0, end=1, size=0.05, coloring="heatmap"),
+            colorbar=dict(title=dict(text="P(Class 1)", font=dict(size=11, color="white")), tickfont=dict(color="white")),
+            hoverinfo="x+y+z",
+            name="Decision Surface",
+        )
+    )
+
+    # 2. Dataset Scatter Points (Class 0 and Class 1)
+    mask_0 = (y == 0)
+    mask_1 = (y == 1)
+
+    fig.add_trace(
+        go.Scatter(
+            x=X[mask_0, 0],
+            y=X[mask_0, 1],
+            mode="markers",
+            name="Class 0",
+            marker=dict(
+                color="#3B82F6",
+                size=8,
+                line=dict(width=1, color="#0F172A"),
+                opacity=0.95,
+            ),
+            hovertext=[f"Class 0 ({X[i, 0]:.2f}, {X[i, 1]:.2f})" for i in np.where(mask_0)[0]],
+            hoverinfo="text",
+        )
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=X[mask_1, 0],
+            y=X[mask_1, 1],
+            mode="markers",
+            name="Class 1",
+            marker=dict(
+                color="#EF4444",
+                size=8,
+                line=dict(width=1, color="#0F172A"),
+                opacity=0.95,
+            ),
+            hovertext=[f"Class 1 ({X[i, 0]:.2f}, {X[i, 1]:.2f})" for i in np.where(mask_1)[0]],
+            hoverinfo="text",
+        )
+    )
+
+    # 3. Active Test Point Overlay (Gold Star)
+    if test_point is not None:
+        tx, ty = test_point
+        fig.add_trace(
+            go.Scatter(
+                x=[tx],
+                y=[ty],
+                mode="markers",
+                name=f"Active ({tx:.2f}, {ty:.2f})",
+                marker=dict(
+                    symbol="star",
+                    size=18,
+                    color="#FFD700",
+                    line=dict(width=2, color="#000000"),
+                ),
+                hovertext=[f"Active Test Point: ({tx:.2f}, {ty:.2f})"],
+                hoverinfo="text",
+            )
+        )
+
+    fig.update_layout(
+        title=dict(text=title, font=dict(size=14, color="#F8FAFC")),
+        xaxis=dict(title=dict(text="Feature x1", font=dict(color="#CBD5E1")), tickfont=dict(color="#CBD5E1"), gridcolor="#334155", zeroline=False),
+        yaxis=dict(title=dict(text="Feature x2", font=dict(color="#CBD5E1")), tickfont=dict(color="#CBD5E1"), gridcolor="#334155", zeroline=False),
+        margin=dict(l=20, r=20, t=40, b=20),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+            font=dict(size=10, color="#CBD5E1"),
+            bgcolor="rgba(15, 23, 42, 0.7)",
+        ),
+        paper_bgcolor="#0F172A",
+        plot_bgcolor="#0F172A",
+        height=420,
+    )
+
+    return fig
+
 
 def plot_dashboard_figures(
     model: nn.Module,
@@ -365,6 +709,7 @@ def plot_dashboard_figures(
     y: np.ndarray,
     loss_hist: List[float],
     acc_hist: List[float],
+    test_point: Optional[Tuple[float, float]] = None,
 ) -> Tuple[plt.Figure, plt.Figure]:
     """Generates two separate figures for the decision boundary and metrics."""
     # 1. Decision Boundary Figure
@@ -376,7 +721,8 @@ def plot_dashboard_figures(
 
     model.eval()
     grid_tensor = Tensor(grid_points, requires_grad=False)
-    grid_logits = model(grid_tensor)
+    with no_grad():
+        grid_logits = model(grid_tensor)
 
     # Softmax probabilities for class 1
     exp_logits = np.exp(grid_logits.data - np.max(grid_logits.data, axis=-1, keepdims=True))
@@ -397,6 +743,22 @@ def plot_dashboard_figures(
         s=30,
         alpha=0.9,
     )
+
+    if test_point is not None:
+        tx, ty = test_point
+        ax_b.scatter(
+            tx,
+            ty,
+            c="#FFD700",
+            edgecolors="#000000",
+            marker="*",
+            s=320,
+            linewidths=2.0,
+            zorder=15,
+            label=f"Active Point ({tx:.2f}, {ty:.2f})",
+        )
+        ax_b.legend(loc="upper right", framealpha=0.88, fontsize=8)
+
     ax_b.set_title("Learned Decision Boundary", fontsize=11, fontweight="bold")
     ax_b.set_xlabel("Feature x1", fontsize=10)
     ax_b.set_ylabel("Feature x2", fontsize=10)
@@ -453,6 +815,99 @@ def plot_gradient_norms(model: nn.Module) -> plt.Figure:
 
     fig.tight_layout()
     return fig
+
+
+def plot_comparison_dashboard_figures(
+    model_a: nn.Module,
+    model_b: nn.Module,
+    X: np.ndarray,
+    y: np.ndarray,
+    loss_hist_a: List[float],
+    acc_hist_a: List[float],
+    loss_hist_b: List[float],
+    acc_hist_b: List[float],
+    test_point: Optional[Tuple[float, float]] = None,
+    title_a: str = "Model A",
+    title_b: str = "Model B",
+) -> Tuple[plt.Figure, plt.Figure, plt.Figure]:
+    """Generates two separate decision boundary figures and one comparative training curve figure."""
+    x_min, x_max = X[:, 0].min() - 0.5, X[:, 0].max() + 0.5
+    y_min, y_max = X[:, 1].min() - 0.5, X[:, 1].max() + 0.5
+    xx, yy = np.meshgrid(np.linspace(x_min, x_max, 180), np.linspace(y_min, y_max, 180))
+    grid_points = np.c_[xx.ravel(), yy.ravel()].astype(np.float32)
+
+    # 1. Model A Decision Boundary
+    fig_a, ax_a = plt.subplots(figsize=(5.5, 4.6), dpi=120)
+    model_a.eval()
+    with no_grad():
+        logits_a = model_a(Tensor(grid_points, requires_grad=False))
+    exp_a = np.exp(logits_a.data - np.max(logits_a.data, axis=-1, keepdims=True))
+    probs_a = (exp_a / np.sum(exp_a, axis=-1, keepdims=True))[:, 1]
+    Z_a = probs_a.reshape(xx.shape)
+
+    c_a = ax_a.contourf(xx, yy, Z_a, levels=40, cmap="Spectral_r", alpha=0.85)
+    ax_a.contour(xx, yy, Z_a, levels=[0.5], colors="black", linewidths=1.8, linestyles="--")
+    fig_a.colorbar(c_a, ax=ax_a, label="P(Class = 1)")
+    ax_a.scatter(X[:, 0], X[:, 1], c=y, cmap="Spectral_r", edgecolors="black", linewidths=0.6, s=28, alpha=0.9)
+    if test_point is not None:
+        tx, ty = test_point
+        ax_a.scatter(tx, ty, c="#FFD700", edgecolors="#000000", marker="*", s=300, linewidths=2.0, zorder=15, label=f"Point ({tx:.2f}, {ty:.2f})")
+        ax_a.legend(loc="upper right", framealpha=0.88, fontsize=8)
+    ax_a.set_title(title_a, fontsize=10, fontweight="bold")
+    ax_a.set_xlabel("Feature x1", fontsize=9)
+    ax_a.set_ylabel("Feature x2", fontsize=9)
+    ax_a.grid(True, linestyle=":", alpha=0.4)
+    fig_a.tight_layout()
+
+    # 2. Model B Decision Boundary
+    fig_b, ax_b = plt.subplots(figsize=(5.5, 4.6), dpi=120)
+    model_b.eval()
+    with no_grad():
+        logits_b = model_b(Tensor(grid_points, requires_grad=False))
+    exp_b = np.exp(logits_b.data - np.max(logits_b.data, axis=-1, keepdims=True))
+    probs_b = (exp_b / np.sum(exp_b, axis=-1, keepdims=True))[:, 1]
+    Z_b = probs_b.reshape(xx.shape)
+
+    c_b = ax_b.contourf(xx, yy, Z_b, levels=40, cmap="Spectral_r", alpha=0.85)
+    ax_b.contour(xx, yy, Z_b, levels=[0.5], colors="black", linewidths=1.8, linestyles="--")
+    fig_b.colorbar(c_b, ax=ax_b, label="P(Class = 1)")
+    ax_b.scatter(X[:, 0], X[:, 1], c=y, cmap="Spectral_r", edgecolors="black", linewidths=0.6, s=28, alpha=0.9)
+    if test_point is not None:
+        tx, ty = test_point
+        ax_b.scatter(tx, ty, c="#FFD700", edgecolors="#000000", marker="*", s=300, linewidths=2.0, zorder=15, label=f"Point ({tx:.2f}, {ty:.2f})")
+        ax_b.legend(loc="upper right", framealpha=0.88, fontsize=8)
+    ax_b.set_title(title_b, fontsize=10, fontweight="bold")
+    ax_b.set_xlabel("Feature x1", fontsize=9)
+    ax_b.set_ylabel("Feature x2", fontsize=9)
+    ax_b.grid(True, linestyle=":", alpha=0.4)
+    fig_b.tight_layout()
+
+    # 3. Comparative Curves
+    fig_curves, (ax_loss, ax_acc) = plt.subplots(1, 2, figsize=(11, 3.8), dpi=120)
+    epochs_range_a = range(1, len(loss_hist_a) + 1)
+    epochs_range_b = range(1, len(loss_hist_b) + 1)
+
+    # Loss plot
+    ax_loss.plot(epochs_range_a, loss_hist_a, color="#EF4444", linewidth=2.0, label="Model A Loss")
+    ax_loss.plot(epochs_range_b, loss_hist_b, color="#3B82F6", linewidth=2.0, linestyle="--", label="Model B Loss")
+    ax_loss.set_xlabel("Epoch", fontweight="bold", fontsize=9)
+    ax_loss.set_ylabel("CrossEntropy Loss", fontweight="bold", fontsize=9)
+    ax_loss.set_title("Loss Convergence Comparison", fontsize=10, fontweight="bold")
+    ax_loss.grid(True, linestyle=":", alpha=0.4)
+    ax_loss.legend(loc="upper right", fontsize=8)
+
+    # Accuracy plot
+    ax_acc.plot(epochs_range_a, acc_hist_a, color="#EF4444", linewidth=2.0, label="Model A Accuracy")
+    ax_acc.plot(epochs_range_b, acc_hist_b, color="#3B82F6", linewidth=2.0, linestyle="--", label="Model B Accuracy")
+    ax_acc.set_xlabel("Epoch", fontweight="bold", fontsize=9)
+    ax_acc.set_ylabel("Accuracy (%)", fontweight="bold", fontsize=9)
+    ax_acc.set_title("Accuracy Progression Comparison", fontsize=10, fontweight="bold")
+    ax_acc.set_ylim([0, 105])
+    ax_acc.grid(True, linestyle=":", alpha=0.4)
+    ax_acc.legend(loc="lower right", fontsize=8)
+    fig_curves.tight_layout()
+
+    return fig_a, fig_b, fig_curves
 
 
 # -----------------------------------------------------------------------------
@@ -576,8 +1031,8 @@ def plot_probability_distribution(probs: np.ndarray) -> plt.Figure:
 # Tab 1: 2D Decision Boundaries
 # -----------------------------------------------------------------------------
 
-def render_decision_boundary_tab():
-    """Renders the 2D Decision Boundary training studio."""
+def render_single_model_studio():
+    """Renders the Single Model 2D Decision Boundary training & interactive inference laboratory."""
     # ---------------- Sidebar Controls ----------------
     with st.sidebar:
         st.header("Experiment Controls")
@@ -588,35 +1043,49 @@ def render_decision_boundary_tab():
             "Dataset Topology",
             ["Two Moons", "Concentric Circles", "Spirals"],
             index=0,
+            key="single_dataset_name",
         )
-        n_samples = st.slider("Sample Count", min_value=100, max_value=1000, value=500, step=50)
-        noise = st.slider("Noise Level", min_value=0.0, max_value=0.3, value=0.12, step=0.02)
-        seed = st.number_input("Random Seed", min_value=0, max_value=9999, value=42, step=1)
+        n_samples = st.slider("Sample Count", min_value=100, max_value=1000, value=500, step=50, key="single_n_samples")
+        noise = st.slider("Noise Level", min_value=0.0, max_value=0.3, value=0.12, step=0.02, key="single_noise")
+        seed = st.number_input("Random Seed", min_value=0, max_value=9999, value=42, step=1, key="single_seed")
 
         # 2. Architecture Settings
         st.subheader("2. Model Architecture")
-        num_layers = st.slider("Hidden Layers", min_value=1, max_value=4, value=2, step=1)
-        hidden_dim = st.select_slider("Hidden Dimension", options=[8, 16, 32, 64, 128], value=32)
-        activation_name = st.selectbox("Activation Function", ["ReLU", "Tanh", "Sigmoid", "GELU"], index=0)
-        use_batchnorm = st.checkbox("Enable BatchNorm1d", value=False)
-        dropout_p = st.slider("Dropout Probability", min_value=0.0, max_value=0.5, value=0.0, step=0.1)
+        num_layers = st.slider("Hidden Layers", min_value=1, max_value=4, value=2, step=1, key="single_num_layers")
+        hidden_dim = st.select_slider("Hidden Dimension", options=[8, 16, 32, 64, 128], value=32, key="single_hidden_dim")
+        activation_name = st.selectbox("Activation Function", ["ReLU", "Tanh", "Sigmoid", "GELU"], index=0, key="single_act_name")
+        use_batchnorm = st.checkbox("Enable BatchNorm1d", value=False, key="single_use_bn")
+        dropout_p = st.slider("Dropout Probability", min_value=0.0, max_value=0.5, value=0.0, step=0.1, key="single_dropout_p")
 
         # 3. Optimization Settings
         st.subheader("3. Optimization & Training")
-        optimizer_name = st.selectbox("Optimizer", ["AdamW", "SGD"], index=0)
+        optimizer_name = st.selectbox("Optimizer", ["AdamW", "SGD"], index=0, key="single_opt_name")
         lr = st.select_slider(
             "Learning Rate",
             options=[0.001, 0.005, 0.01, 0.02, 0.03, 0.05, 0.1, 0.2],
             value=0.03,
+            key="single_lr",
         )
         momentum = 0.9
         if optimizer_name == "SGD":
-            momentum = st.slider("Polyak Momentum", min_value=0.0, max_value=0.99, value=0.9, step=0.05)
+            momentum = st.slider("Polyak Momentum", min_value=0.0, max_value=0.99, value=0.9, step=0.05, key="single_momentum")
 
-        weight_decay = st.select_slider("Weight Decay", options=[0.0, 1e-5, 1e-4, 1e-3, 1e-2], value=1e-4)
-        batch_size = st.select_slider("Batch Size", options=[16, 32, 64, 128], value=32)
-        epochs = st.slider("Epochs", min_value=10, max_value=150, value=60, step=5)
-        update_freq = st.slider("UI Refresh Interval (Epochs)", min_value=1, max_value=10, value=2, step=1)
+        weight_decay = st.select_slider("Weight Decay", options=[0.0, 1e-5, 1e-4, 1e-3, 1e-2], value=1e-4, key="single_weight_decay")
+        batch_size = st.select_slider("Batch Size", options=[16, 32, 64, 128], value=32, key="single_batch_size")
+        epochs = st.slider("Epochs", min_value=10, max_value=150, value=60, step=5, key="single_epochs")
+        update_freq = st.slider("UI Refresh Interval (Epochs)", min_value=1, max_value=10, value=2, step=1, key="single_update_freq")
+
+        if "trained_2d_model" in st.session_state:
+            st.divider()
+            def _cb_reset_single():
+                if "trained_2d_model" in st.session_state:
+                    del st.session_state["trained_2d_model"]
+                if "slider_x1" in st.session_state:
+                    del st.session_state["slider_x1"]
+                if "slider_x2" in st.session_state:
+                    del st.session_state["slider_x2"]
+
+            st.button("Reset Trained Model", width="stretch", key="single_reset_btn", on_click=_cb_reset_single)
 
     # ---------------- Data Preparation ----------------
     X, y = generate_dataset(dataset_name, n_samples=n_samples, noise=noise, random_state=seed)
@@ -624,29 +1093,26 @@ def render_decision_boundary_tab():
     # Top Control Bar
     col_btn, col_info = st.columns([1, 3])
     with col_btn:
-        start_training = st.button("Start Training", type="primary", use_container_width=True)
+        start_training = st.button("Start Training", type="primary", width="stretch", key="single_start_btn")
     with col_info:
         total_params = (2 * hidden_dim + hidden_dim) + (num_layers - 1) * (hidden_dim * hidden_dim + hidden_dim) + (hidden_dim * 2 + 2)
         st.info(f"Dataset: **{dataset_name}** (N={n_samples}) | Architecture: **{num_layers}x {hidden_dim}d** ({total_params} Trainable Parameters) | Optimizer: **{optimizer_name}** (lr={lr})")
 
-    # ---------------- Dashboard Layout Placeholders ----------------
+    # ---------------- Active State Resolution ----------------
+    has_trained_model = "trained_2d_model" in st.session_state
+
+    # Dashboard Layout Placeholders
+    status_placeholder = st.empty()
     metrics_placeholder = st.empty()
-    progress_bar = st.progress(0.0)
+    progress_placeholder = st.empty()
+    
     col_left, col_right = st.columns(2)
     with col_left:
         plot_left = st.empty()
     with col_right:
         plot_right = st.empty()
 
-    diag_placeholder = st.empty()
-
-    # Initial static plot before training starts
-    initial_model = build_model(num_layers, hidden_dim, activation_name, use_batchnorm, dropout_p)
-    fig_b, fig_m = plot_dashboard_figures(initial_model, X, y, [0.693], [50.0])
-    plot_left.pyplot(fig_b)
-    plot_right.pyplot(fig_m)
-    plt.close(fig_b)
-    plt.close(fig_m)
+    inference_placeholder = st.empty()
 
     # ---------------- Interactive Training Loop ----------------
     if start_training:
@@ -663,6 +1129,7 @@ def render_decision_boundary_tab():
 
         loss_history: List[float] = []
         acc_history: List[float] = []
+        progress_bar = progress_placeholder.progress(0.0)
         start_time = time.time()
 
         for epoch in range(1, epochs + 1):
@@ -705,14 +1172,803 @@ def render_decision_boundary_tab():
                 plt.close(fig_b)
                 plt.close(fig_m)
 
-        st.success(f"Training converged in {time.time() - start_time:.2f}s | Final Accuracy: **{acc_history[-1]:.2f}%** | Final Loss: **{loss_history[-1]:.4f}**")
+        elapsed_total = time.time() - start_time
+        progress_placeholder.empty()
 
-        # ---------------- Post-Training Gradient Norm Diagnostic ----------------
-        with diag_placeholder.container():
-            st.subheader("Post-Training Diagnostics: Gradient Propagation")
-            fig_grad = plot_gradient_norms(model)
-            st.pyplot(fig_grad)
-            plt.close(fig_grad)
+        # Architecture & parameter calculation
+        arch_summary = get_architecture_summary(model)
+        actual_params = sum(p.data.size for p in model.parameters())
+
+        # Store in session state
+        st.session_state["trained_2d_model"] = {
+            "model": model,
+            "dataset_name": dataset_name,
+            "X": X,
+            "y": y,
+            "loss_history": loss_history,
+            "acc_history": acc_history,
+            "arch_summary": arch_summary,
+            "total_params": actual_params,
+            "final_loss": loss_history[-1],
+            "final_acc": acc_history[-1],
+            "elapsed_time": elapsed_total,
+            "history": st.session_state.get("trained_2d_model", {}).get("history", []),
+        }
+        has_trained_model = True
+
+    # ---------------- Render Model State (Trained vs Initial) ----------------
+    if has_trained_model and "trained_2d_model" in st.session_state:
+        saved = st.session_state["trained_2d_model"]
+        model = saved["model"]
+        data_X = saved["X"]
+        data_y = saved["y"]
+        loss_hist = saved["loss_history"]
+        acc_hist = saved["acc_history"]
+        arch_summary = saved["arch_summary"]
+        actual_params = saved["total_params"]
+        final_loss = saved["final_loss"]
+        final_acc = saved["final_acc"]
+        elapsed_total = saved["elapsed_time"]
+
+        # Resolve interactive click selection from Plotly boundary chart
+        if HAS_PLOTLY and "plotly_single_boundary" in st.session_state:
+            plotly_state = st.session_state["plotly_single_boundary"]
+            if isinstance(plotly_state, dict):
+                sel_pts = plotly_state.get("selection", {}).get("points", [])
+                if sel_pts:
+                    clicked_pt = sel_pts[0]
+                    if "x" in clicked_pt and "y" in clicked_pt:
+                        st.session_state["slider_x1"] = float(np.round(clicked_pt["x"], 2))
+                        st.session_state["slider_x2"] = float(np.round(clicked_pt["y"], 2))
+
+        # Resolve slider coordinates first (handling preset buttons)
+        init_x1 = st.session_state.pop("test_x1_val", None)
+        init_x2 = st.session_state.pop("test_x2_val", None)
+        if init_x1 is not None:
+            st.session_state["slider_x1"] = init_x1
+        elif "slider_x1" not in st.session_state:
+            st.session_state["slider_x1"] = 0.0
+
+        if init_x2 is not None:
+            st.session_state["slider_x2"] = init_x2
+        elif "slider_x2" not in st.session_state:
+            st.session_state["slider_x2"] = 0.0
+
+        active_x1 = float(st.session_state["slider_x1"])
+        active_x2 = float(st.session_state["slider_x2"])
+
+        # 1. Model Ready Banner
+        with status_placeholder.container():
+            st.markdown(
+                f"""
+                <div class="model-ready-card">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+                        <div>
+                            <div class="model-ready-title">Model Ready: Interactive Inference Mode</div>
+                            <div class="model-ready-subtitle">Topology converged on <strong>{saved["dataset_name"]}</strong> dataset. Click any point on the decision boundary or adjust sliders below for real-time evaluation.</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <span class="model-ready-badge">Topology: {arch_summary}</span>
+                            <span class="model-ready-badge">Params: {actual_params:,}</span>
+                        </div>
+                    </div>
+                    <div style="margin-top: 0.5rem; font-size: 0.85rem; color: #CBD5E1;">
+                        Final Accuracy: <strong>{final_acc:.2f}%</strong> &nbsp;|&nbsp; Final Loss: <strong>{final_loss:.4f}</strong> &nbsp;|&nbsp; Training Duration: <strong>{elapsed_total:.2f}s</strong>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        # 2. Final Training Metrics Display
+        with metrics_placeholder.container():
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Epochs Completed", f"{len(loss_hist)} / {len(loss_hist)}")
+            m2.metric("Final Loss", f"{final_loss:.4f}", delta=f"{-(loss_hist[0] - final_loss):.4f}" if len(loss_hist) > 1 else None, delta_color="inverse")
+            m3.metric("Final Accuracy", f"{final_acc:.2f}%", delta=f"{final_acc - acc_hist[0]:+.2f}%" if len(acc_hist) > 1 else None)
+            m4.metric("Total Duration", f"{elapsed_total:.2f}s")
+
+        # 3. Always render dashboard plots with test point marker overlaid
+        if HAS_PLOTLY:
+            fig_b_plotly = plot_plotly_decision_boundary(
+                model, data_X, data_y, test_point=(active_x1, active_x2)
+            )
+            plot_left.plotly_chart(
+                fig_b_plotly,
+                on_select="rerun",
+                selection_mode=["points"],
+                key="plotly_single_boundary",
+                width="stretch",
+            )
+            _, fig_m = plot_dashboard_figures(
+                model, data_X, data_y, loss_hist, acc_hist, test_point=(active_x1, active_x2)
+            )
+            plot_right.pyplot(fig_m)
+            plt.close(fig_m)
+        else:
+            fig_b, fig_m = plot_dashboard_figures(
+                model, data_X, data_y, loss_hist, acc_hist, test_point=(active_x1, active_x2)
+            )
+            plot_left.pyplot(fig_b)
+            plot_right.pyplot(fig_m)
+            plt.close(fig_b)
+            plt.close(fig_m)
+
+        # 4. Interactive Inference Controls
+        with inference_placeholder.container():
+            st.markdown("### Interactive 2D Inference: Test New Coordinates")
+            st.markdown("Click on any region/point of the decision boundary above, or adjust coordinates $(x_1, x_2)$ below. The model will evaluate a forward pass in real time under `with no_grad():`.")
+
+            # Presets callbacks
+            def _cb_set_single_coords(x1: float, x2: float):
+                st.session_state["slider_x1"] = x1
+                st.session_state["slider_x2"] = x2
+
+            def _cb_set_single_random():
+                st.session_state["slider_x1"] = float(np.round(np.random.uniform(-1.8, 1.8), 2))
+                st.session_state["slider_x2"] = float(np.round(np.random.uniform(-1.8, 1.8), 2))
+
+            # Presets row
+            p_col1, p_col2, p_col3, p_col4, p_col5 = st.columns(5)
+            with p_col1:
+                st.button("Origin (0.0, 0.0)", key="preset_origin", width="stretch", on_click=_cb_set_single_coords, args=(0.0, 0.0))
+            with p_col2:
+                st.button("Class 0 (-1.0, 0.5)", key="preset_c0", width="stretch", on_click=_cb_set_single_coords, args=(-1.0, 0.5))
+            with p_col3:
+                st.button("Class 1 (1.0, -0.5)", key="preset_c1", width="stretch", on_click=_cb_set_single_coords, args=(1.0, -0.5))
+            with p_col4:
+                st.button("Decision Border (0.5, 0.25)", key="preset_border", width="stretch", on_click=_cb_set_single_coords, args=(0.5, 0.25))
+            with p_col5:
+                st.button("Random Point", key="preset_random", width="stretch", on_click=_cb_set_single_random)
+
+            c_coord1, c_coord2 = st.columns(2)
+            with c_coord1:
+                test_x1 = st.slider("Coordinate X1 (Feature 1)", min_value=-2.5, max_value=2.5, step=0.05, key="slider_x1")
+            with c_coord2:
+                test_x2 = st.slider("Coordinate X2 (Feature 2)", min_value=-2.5, max_value=2.5, step=0.05, key="slider_x2")
+
+            # Point Prediction Pass
+            pred_class, confidence, probs = predict_point(model, test_x1, test_x2)
+
+            # Display prediction card & probabilities
+            res_col1, res_col2 = st.columns([1, 2], gap="medium")
+            with res_col1:
+                class_color = "#3B82F6" if pred_class == 0 else "#EF4444"
+                st.markdown(
+                    f"""
+                    <div style="background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%); border: 1.5px solid {class_color}; border-radius: 12px; padding: 1.25rem; text-align: center; color: white;">
+                        <div style="font-size: 0.78rem; text-transform: uppercase; letter-spacing: 1px; color: #94A3B8;">Model Prediction</div>
+                        <div style="font-size: 2.3rem; font-weight: 800; color: {class_color}; margin: 0.2rem 0;">Class {pred_class}</div>
+                        <div style="font-size: 1.15rem; font-weight: 600; color: #F1F5F9;">{confidence * 100:.1f}% Confidence</div>
+                        <div style="font-size: 0.8rem; color: #94A3B8; margin-top: 0.4rem;">Coordinate: ({test_x1:.2f}, {test_x2:.2f})</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+            with res_col2:
+                st.markdown("##### Probability Distribution")
+                p0 = float(probs[0])
+                p1 = float(probs[1])
+
+                st.markdown(
+                    f"""
+                    <div class="prob-bar-container">
+                        <div class="prob-bar-label">
+                            <span style="color: #3B82F6;">Class 0</span>
+                            <span>{p0 * 100:.2f}%</span>
+                        </div>
+                        <div class="prob-bar-bg">
+                            <div class="prob-bar-fill-0" style="width: {max(0.0, min(100.0, p0 * 100)):.2f}%;"></div>
+                        </div>
+                    </div>
+                    <div class="prob-bar-container" style="margin-top: 0.75rem;">
+                        <div class="prob-bar-label">
+                            <span style="color: #EF4444;">Class 1</span>
+                            <span>{p1 * 100:.2f}%</span>
+                        </div>
+                        <div class="prob-bar-bg">
+                            <div class="prob-bar-fill-1" style="width: {max(0.0, min(100.0, p1 * 100)):.2f}%;"></div>
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+                def _cb_log_single():
+                    saved_history = saved.setdefault("history", [])
+                    saved_history.insert(0, {
+                        "Time": time.strftime("%H:%M:%S"),
+                        "X1": round(test_x1, 2),
+                        "X2": round(test_x2, 2),
+                        "Predicted Class": f"Class {pred_class}",
+                        "Confidence": f"{confidence * 100:.1f}%",
+                        "P(Class 0)": f"{p0 * 100:.1f}%",
+                        "P(Class 1)": f"{p1 * 100:.1f}%",
+                    })
+                    st.session_state["trained_2d_model"]["history"] = saved_history[:10]
+
+                # Add to history if unique or log button
+                hist_col1, hist_col2 = st.columns([1, 2])
+                with hist_col1:
+                    st.button("Log Test Point", key="btn_log_point", width="stretch", on_click=_cb_log_single)
+
+                if saved.get("history"):
+                    st.caption("Recent Point Evaluations:")
+                    st.dataframe(saved["history"][:5], width="stretch", hide_index=True)
+
+            # 4. Engine Internals & Computation Trace Drawer
+            with st.expander("Engine Internals & Computation Trace", expanded=False):
+                st.markdown("#### 1. Forward Pass Computation Trace")
+                st.markdown(f"Layer-by-layer tensor activations evaluated for active coordinate $(x_1 = {test_x1:.2f}, x_2 = {test_x2:.2f})$:")
+                
+                trace_steps, softmax_details = trace_forward_pass(model, test_x1, test_x2)
+                st.dataframe(trace_steps, width="stretch", hide_index=True)
+
+                # Softmax Mathematical Breakdown
+                st.markdown("##### Softmax Normalization Breakdown (Log-Sum-Exp Trick)")
+                raw_logits = softmax_details["raw_logits"]
+                max_logit = softmax_details["max_logit"]
+                shifted = softmax_details["shifted_logits"]
+                sum_exp = softmax_details["sum_exp"]
+                probs_val = softmax_details["probabilities"]
+
+                sm_col1, sm_col2, sm_col3 = st.columns(3)
+                with sm_col1:
+                    st.caption("Raw Output Logits (z)")
+                    st.code(f"z = [{raw_logits[0]:.4f}, {raw_logits[1]:.4f}]")
+                with sm_col2:
+                    st.caption(f"Log-Sum-Exp Shift (z - {max_logit:.4f})")
+                    st.code(f"z_shifted = [{shifted[0]:.4f}, {shifted[1]:.4f}]")
+                with sm_col3:
+                    st.caption("Normalized Probabilities")
+                    st.code(f"P = [{probs_val[0]*100:.2f}%, {probs_val[1]*100:.2f}%]")
+
+                st.divider()
+
+                # Parameter Diagnostics
+                st.markdown("#### 2. Parameter Tensors & Weight Distributions")
+                param_diagnostics = get_parameter_diagnostics(model)
+                st.dataframe(param_diagnostics, width="stretch", hide_index=True)
+
+                # Weight Matrix Inspector
+                raw_weights = get_layer_raw_weights(model)
+                if raw_weights:
+                    selected_param_id = st.selectbox("Inspect Raw Weight Matrix", options=list(raw_weights.keys()), key="raw_weight_selector")
+                    if selected_param_id in raw_weights:
+                        raw_arr = raw_weights[selected_param_id]
+                        st.caption(f"Raw Array ({list(raw_arr.shape)}):")
+                        if raw_arr.ndim == 1:
+                            st.dataframe(raw_arr.reshape(1, -1), width="stretch")
+                        else:
+                            st.dataframe(raw_arr, width="stretch")
+
+                st.divider()
+
+                # Gradient Telemetry
+                st.markdown("#### 3. Gradient Flow Telemetry")
+                st.caption("Layer-by-layer gradient L2 norms after backpropagation across training epochs:")
+                fig_grad_internal = plot_gradient_norms(model)
+                st.pyplot(fig_grad_internal)
+                plt.close(fig_grad_internal)
+
+    elif not start_training:
+        # Initial static plot before training starts
+        initial_model = build_model(num_layers, hidden_dim, activation_name, use_batchnorm, dropout_p)
+        if HAS_PLOTLY:
+            fig_b_plotly = plot_plotly_decision_boundary(initial_model, X, y, title="Untrained Initial Decision Boundary (Click to Predict)")
+            plot_left.plotly_chart(fig_b_plotly, on_select="rerun", selection_mode=["points"], key="plotly_single_init", width="stretch")
+            _, fig_m = plot_dashboard_figures(initial_model, X, y, [0.693], [50.0])
+            plot_right.pyplot(fig_m)
+            plt.close(fig_m)
+        else:
+            fig_b, fig_m = plot_dashboard_figures(initial_model, X, y, [0.693], [50.0])
+            plot_left.pyplot(fig_b)
+            plot_right.pyplot(fig_m)
+            plt.close(fig_b)
+            plt.close(fig_m)
+
+        with inference_placeholder.container():
+            st.info("Configure hyperparameters in the sidebar and click **Start Training** to build the model and unlock the interactive coordinate tester.")
+
+
+def render_model_comparison_studio():
+    """Renders the side-by-side Model Capacity Comparison laboratory."""
+    # ---------------- Sidebar Controls ----------------
+    with st.sidebar:
+        st.header("Comparison Experiment Controls")
+
+        # 1. Dataset Configuration (Shared)
+        st.subheader("1. Shared Dataset")
+        dataset_name = st.selectbox(
+            "Dataset Topology",
+            ["Two Moons", "Concentric Circles", "Spirals"],
+            index=2,
+            key="comp_dataset_name",
+        )
+        n_samples = st.slider("Sample Count", min_value=100, max_value=1000, value=500, step=50, key="comp_n_samples")
+        noise = st.slider("Noise Level", min_value=0.0, max_value=0.3, value=0.10, step=0.02, key="comp_noise")
+        seed = st.number_input("Random Seed", min_value=0, max_value=9999, value=42, step=1, key="comp_seed")
+
+        # 2. Model A Configuration
+        st.subheader("2. Model A (Shallow / Baseline)")
+        num_layers_a = st.slider("Model A Hidden Layers", min_value=1, max_value=4, value=1, step=1, key="comp_layers_a")
+        hidden_dim_a = st.select_slider("Model A Hidden Dimension", options=[4, 8, 16, 32, 64, 128], value=4, key="comp_dim_a")
+        act_a = st.selectbox("Model A Activation", ["Tanh", "ReLU", "Sigmoid", "GELU"], index=0, key="comp_act_a")
+        bn_a = st.checkbox("Model A BatchNorm1d", value=False, key="comp_bn_a")
+        dropout_a = st.slider("Model A Dropout", min_value=0.0, max_value=0.5, value=0.0, step=0.1, key="comp_drop_a")
+        opt_a_name = st.selectbox("Model A Optimizer", ["SGD", "AdamW"], index=0, key="comp_opt_a")
+        lr_a = st.select_slider("Model A Learning Rate", options=[0.001, 0.005, 0.01, 0.02, 0.03, 0.05, 0.1, 0.2], value=0.05, key="comp_lr_a")
+        momentum_a = 0.9
+        if opt_a_name == "SGD":
+            momentum_a = st.slider("Model A Momentum", min_value=0.0, max_value=0.99, value=0.9, step=0.05, key="comp_mom_a")
+        wd_a = st.select_slider("Model A Weight Decay", options=[0.0, 1e-5, 1e-4, 1e-3, 1e-2], value=1e-4, key="comp_wd_a")
+
+        # 3. Model B Configuration
+        st.subheader("3. Model B (Deep / High Capacity)")
+        num_layers_b = st.slider("Model B Hidden Layers", min_value=1, max_value=4, value=2, step=1, key="comp_layers_b")
+        hidden_dim_b = st.select_slider("Model B Hidden Dimension", options=[4, 8, 16, 32, 64, 128], value=32, key="comp_dim_b")
+        act_b = st.selectbox("Model B Activation", ["ReLU", "Tanh", "Sigmoid", "GELU"], index=0, key="comp_act_b")
+        bn_b = st.checkbox("Model B BatchNorm1d", value=False, key="comp_bn_b")
+        dropout_b = st.slider("Model B Dropout", min_value=0.0, max_value=0.5, value=0.0, step=0.1, key="comp_drop_b")
+        opt_b_name = st.selectbox("Model B Optimizer", ["AdamW", "SGD"], index=0, key="comp_opt_b")
+        lr_b = st.select_slider("Model B Learning Rate", options=[0.001, 0.005, 0.01, 0.02, 0.03, 0.05, 0.1, 0.2], value=0.01, key="comp_lr_b")
+        momentum_b = 0.9
+        if opt_b_name == "SGD":
+            momentum_b = st.slider("Model B Momentum", min_value=0.0, max_value=0.99, value=0.9, step=0.05, key="comp_mom_b")
+        wd_b = st.select_slider("Model B Weight Decay", options=[0.0, 1e-5, 1e-4, 1e-3, 1e-2], value=1e-4, key="comp_wd_b")
+
+        # 4. Shared Training Parameters
+        st.subheader("4. Training Schedule")
+        batch_size = st.select_slider("Batch Size", options=[16, 32, 64, 128], value=32, key="comp_bs")
+        epochs = st.slider("Epochs", min_value=10, max_value=150, value=60, step=5, key="comp_epochs")
+        update_freq = st.slider("UI Refresh Interval (Epochs)", min_value=1, max_value=10, value=2, step=1, key="comp_freq")
+
+        if "model_comparison" in st.session_state:
+            st.divider()
+            def _cb_reset_comp():
+                if "model_comparison" in st.session_state:
+                    del st.session_state["model_comparison"]
+                if "comp_slider_x1" in st.session_state:
+                    del st.session_state["comp_slider_x1"]
+                if "comp_slider_x2" in st.session_state:
+                    del st.session_state["comp_slider_x2"]
+
+            st.button("Reset Comparison Models", width="stretch", key="btn_reset_comp", on_click=_cb_reset_comp)
+
+    # ---------------- Data Preparation ----------------
+    X, y = generate_dataset(dataset_name, n_samples=n_samples, noise=noise, random_state=seed)
+
+    # Calculate theoretical params
+    params_a_calc = (2 * hidden_dim_a + hidden_dim_a) + (num_layers_a - 1) * (hidden_dim_a * hidden_dim_a + hidden_dim_a) + (hidden_dim_a * 2 + 2)
+    params_b_calc = (2 * hidden_dim_b + hidden_dim_b) + (num_layers_b - 1) * (hidden_dim_b * hidden_dim_b + hidden_dim_b) + (hidden_dim_b * 2 + 2)
+
+    # Top Action Bar
+    col_btn, col_info = st.columns([1, 3])
+    with col_btn:
+        start_training = st.button("Train Both Models (A & B)", type="primary", width="stretch", key="btn_train_comp")
+    with col_info:
+        st.info(f"Dataset: **{dataset_name}** (N={n_samples}) | **Model A**: {num_layers_a}x {hidden_dim_a}d ({params_a_calc} params, {act_a}) | **Model B**: {num_layers_b}x {hidden_dim_b}d ({params_b_calc} params, {act_b})")
+
+    # Placeholders
+    has_comparison = "model_comparison" in st.session_state
+    status_placeholder = st.empty()
+    metrics_placeholder = st.empty()
+    progress_placeholder = st.empty()
+
+    col_plot_a, col_plot_b = st.columns(2)
+    with col_plot_a:
+        plot_a_holder = st.empty()
+    with col_plot_b:
+        plot_b_holder = st.empty()
+
+    curves_placeholder = st.empty()
+    inference_placeholder = st.empty()
+
+    # ---------------- Dual Training Loop ----------------
+    if start_training:
+        model_a = build_model(num_layers_a, hidden_dim_a, act_a, bn_a, dropout_a)
+        model_b = build_model(num_layers_b, hidden_dim_b, act_b, bn_b, dropout_b)
+
+        criterion_a = nn.CrossEntropyLoss()
+        criterion_b = nn.CrossEntropyLoss()
+
+        if opt_a_name == "AdamW":
+            opt_a = optim.AdamW(model_a.parameters(), lr=lr_a, weight_decay=wd_a)
+        else:
+            opt_a = optim.SGD(model_a.parameters(), lr=lr_a, momentum=momentum_a, weight_decay=wd_a)
+
+        if opt_b_name == "AdamW":
+            opt_b = optim.AdamW(model_b.parameters(), lr=lr_b, weight_decay=wd_b)
+        else:
+            opt_b = optim.SGD(model_b.parameters(), lr=lr_b, momentum=momentum_b, weight_decay=wd_b)
+
+        dataset = TensorDataset(X, y)
+        loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+
+        loss_hist_a, acc_hist_a = [], []
+        loss_hist_b, acc_hist_b = [], []
+
+        progress_bar = progress_placeholder.progress(0.0)
+        start_time = time.time()
+
+        for epoch in range(1, epochs + 1):
+            model_a.train()
+            model_b.train()
+            epoch_losses_a = []
+            epoch_losses_b = []
+
+            for batch_X, batch_y in loader:
+                # Step Model A
+                opt_a.zero_grad()
+                logits_a = model_a(batch_X)
+                loss_a = criterion_a(logits_a, batch_y)
+                loss_a.backward()
+                opt_a.step()
+                epoch_losses_a.append(float(loss_a.data))
+
+                # Step Model B
+                opt_b.zero_grad()
+                logits_b = model_b(batch_X)
+                loss_b = criterion_b(logits_b, batch_y)
+                loss_b.backward()
+                opt_b.step()
+                epoch_losses_b.append(float(loss_b.data))
+
+            # Epoch evaluation
+            model_a.eval()
+            model_b.eval()
+            full_t = Tensor(X, requires_grad=False)
+            
+            full_logits_a = model_a(full_t)
+            preds_a = np.argmax(full_logits_a.data, axis=1)
+            accuracy_a = float(np.mean(preds_a == y) * 100.0)
+            avg_loss_a = float(np.mean(epoch_losses_a))
+            loss_hist_a.append(avg_loss_a)
+            acc_hist_a.append(accuracy_a)
+
+            full_logits_b = model_b(full_t)
+            preds_b = np.argmax(full_logits_b.data, axis=1)
+            accuracy_b = float(np.mean(preds_b == y) * 100.0)
+            avg_loss_b = float(np.mean(epoch_losses_b))
+            loss_hist_b.append(avg_loss_b)
+            acc_hist_b.append(accuracy_b)
+
+            if epoch % update_freq == 0 or epoch == epochs or epoch == 1:
+                elapsed = time.time() - start_time
+                progress_bar.progress(epoch / float(epochs))
+
+                with metrics_placeholder.container():
+                    m_ep, m_la, m_lb, m_aa, m_ab, m_tm = st.columns(6)
+                    m_ep.metric("Epoch", f"{epoch} / {epochs}")
+                    m_la.metric("Loss (A)", f"{avg_loss_a:.3f}")
+                    m_lb.metric("Loss (B)", f"{avg_loss_b:.3f}")
+                    m_aa.metric("Acc (A)", f"{accuracy_a:.1f}%")
+                    m_ab.metric("Acc (B)", f"{accuracy_b:.1f}%")
+                    m_tm.metric("Elapsed", f"{elapsed:.2f}s")
+
+                arch_a_str = get_architecture_summary(model_a)
+                arch_b_str = get_architecture_summary(model_b)
+                fig_a, fig_b, fig_c = plot_comparison_dashboard_figures(
+                    model_a, model_b, X, y, loss_hist_a, acc_hist_a, loss_hist_b, acc_hist_b,
+                    title_a=f"Model A: {arch_a_str} ({act_a}) - {accuracy_a:.1f}%",
+                    title_b=f"Model B: {arch_b_str} ({act_b}) - {accuracy_b:.1f}%",
+                )
+                plot_a_holder.pyplot(fig_a)
+                plot_b_holder.pyplot(fig_b)
+                curves_placeholder.pyplot(fig_c)
+                plt.close(fig_a)
+                plt.close(fig_b)
+                plt.close(fig_c)
+
+        elapsed_total = time.time() - start_time
+        progress_placeholder.empty()
+
+        arch_a_str = get_architecture_summary(model_a)
+        arch_b_str = get_architecture_summary(model_b)
+        actual_params_a = sum(p.data.size for p in model_a.parameters())
+        actual_params_b = sum(p.data.size for p in model_b.parameters())
+
+        st.session_state["model_comparison"] = {
+            "model_a": model_a,
+            "model_b": model_b,
+            "dataset_name": dataset_name,
+            "X": X,
+            "y": y,
+            "loss_hist_a": loss_hist_a,
+            "acc_hist_a": acc_hist_a,
+            "loss_hist_b": loss_hist_b,
+            "acc_hist_b": acc_hist_b,
+            "arch_a": arch_a_str,
+            "arch_b": arch_b_str,
+            "act_a": act_a,
+            "act_b": act_b,
+            "params_a": actual_params_a,
+            "params_b": actual_params_b,
+            "final_loss_a": loss_hist_a[-1],
+            "final_acc_a": acc_hist_a[-1],
+            "final_loss_b": loss_hist_b[-1],
+            "final_acc_b": acc_hist_b[-1],
+            "elapsed_time": elapsed_total,
+        }
+        has_comparison = True
+
+    # ---------------- Render Comparison State ----------------
+    if has_comparison and "model_comparison" in st.session_state:
+        saved = st.session_state["model_comparison"]
+        model_a = saved["model_a"]
+        model_b = saved["model_b"]
+        data_X = saved["X"]
+        data_y = saved["y"]
+        l_hist_a = saved["loss_hist_a"]
+        a_hist_a = saved["acc_hist_a"]
+        l_hist_b = saved["loss_hist_b"]
+        a_hist_b = saved["acc_hist_b"]
+        arch_a_str = saved["arch_a"]
+        arch_b_str = saved["arch_b"]
+        act_a_str = saved["act_a"]
+        act_b_str = saved["act_b"]
+        p_a = saved["params_a"]
+        p_b = saved["params_b"]
+        f_loss_a = saved["final_loss_a"]
+        f_acc_a = saved["final_acc_a"]
+        f_loss_b = saved["final_loss_b"]
+        f_acc_b = saved["final_acc_b"]
+        elapsed_total = saved["elapsed_time"]
+
+        # Resolve interactive click selection from Plotly comparison charts
+        if HAS_PLOTLY:
+            for p_key in ["plotly_comp_a", "plotly_comp_b"]:
+                if p_key in st.session_state:
+                    p_state = st.session_state[p_key]
+                    if isinstance(p_state, dict):
+                        sel_pts = p_state.get("selection", {}).get("points", [])
+                        if sel_pts:
+                            clicked_pt = sel_pts[0]
+                            if "x" in clicked_pt and "y" in clicked_pt:
+                                st.session_state["comp_slider_x1"] = float(np.round(clicked_pt["x"], 2))
+                                st.session_state["comp_slider_x2"] = float(np.round(clicked_pt["y"], 2))
+
+        # Resolve slider coordinates first (handling preset buttons)
+        init_x1 = st.session_state.pop("comp_test_x1_val", None)
+        init_x2 = st.session_state.pop("comp_test_x2_val", None)
+        if init_x1 is not None:
+            st.session_state["comp_slider_x1"] = init_x1
+        elif "comp_slider_x1" not in st.session_state:
+            st.session_state["comp_slider_x1"] = 0.0
+
+        if init_x2 is not None:
+            st.session_state["comp_slider_x2"] = init_x2
+        elif "comp_slider_x2" not in st.session_state:
+            st.session_state["comp_slider_x2"] = 0.0
+
+        cur_comp_x1 = float(st.session_state["comp_slider_x1"])
+        cur_comp_x2 = float(st.session_state["comp_slider_x2"])
+
+        # 1. Comparative Summary Card
+        with status_placeholder.container():
+            st.markdown(
+                f"""
+                <div class="model-ready-card">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+                        <div>
+                            <div class="model-ready-title">Model Capacity Comparison Ready</div>
+                            <div class="model-ready-subtitle">Evaluated on <strong>{saved["dataset_name"]}</strong> dataset under identical mini-batches. Click either boundary plot or adjust sliders below for real-time comparison.</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <span class="model-ready-badge">Model A: {arch_a_str} ({p_a} params)</span>
+                            <span class="model-ready-badge">Model B: {arch_b_str} ({p_b} params)</span>
+                        </div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        # 2. Comparative Metrics Table
+        with metrics_placeholder.container():
+            acc_diff = f_acc_b - f_acc_a
+            loss_diff = f_loss_b - f_loss_a
+            param_ratio = (p_b / max(1, p_a))
+            comp_table = [
+                {"Metric": "Architecture Topology", "Model A": f"{arch_a_str} ({act_a_str})", "Model B": f"{arch_b_str} ({act_b_str})", "Comparison": f"Model B has higher capacity"},
+                {"Metric": "Trainable Parameters", "Model A": f"{p_a:,}", "Model B": f"{p_b:,}", "Comparison": f"Model B is {param_ratio:.1f}x larger"},
+                {"Metric": "Final Accuracy", "Model A": f"{f_acc_a:.2f}%", "Model B": f"{f_acc_b:.2f}%", "Comparison": f"{acc_diff:+.2f}% Accuracy delta"},
+                {"Metric": "Final CrossEntropy Loss", "Model A": f"{f_loss_a:.4f}", "Model B": f"{f_loss_b:.4f}", "Comparison": f"{loss_diff:+.4f} Loss delta"},
+                {"Metric": "Total Training Time", "Model A": f"{elapsed_total:.2f}s", "Model B": f"{elapsed_total:.2f}s", "Comparison": "Synchronized training"},
+            ]
+            st.dataframe(comp_table, width="stretch", hide_index=True)
+
+        # 3. Always render comparison dashboard plots with test point marker overlaid
+        if HAS_PLOTLY:
+            fig_a_plotly = plot_plotly_decision_boundary(
+                model_a, data_X, data_y, test_point=(cur_comp_x1, cur_comp_x2),
+                title=f"Model A: {arch_a_str} ({act_a_str}) - {f_acc_a:.1f}%",
+            )
+            fig_b_plotly = plot_plotly_decision_boundary(
+                model_b, data_X, data_y, test_point=(cur_comp_x1, cur_comp_x2),
+                title=f"Model B: {arch_b_str} ({act_b_str}) - {f_acc_b:.1f}%",
+            )
+            plot_a_holder.plotly_chart(fig_a_plotly, on_select="rerun", selection_mode=["points"], key="plotly_comp_a", width="stretch")
+            plot_b_holder.plotly_chart(fig_b_plotly, on_select="rerun", selection_mode=["points"], key="plotly_comp_b", width="stretch")
+            _, _, fig_c = plot_comparison_dashboard_figures(
+                model_a, model_b, data_X, data_y, l_hist_a, a_hist_a, l_hist_b, a_hist_b,
+                test_point=(cur_comp_x1, cur_comp_x2),
+                title_a=f"Model A",
+                title_b=f"Model B",
+            )
+            curves_placeholder.pyplot(fig_c)
+            plt.close(fig_c)
+        else:
+            fig_a, fig_b, fig_c = plot_comparison_dashboard_figures(
+                model_a, model_b, data_X, data_y, l_hist_a, a_hist_a, l_hist_b, a_hist_b,
+                test_point=(cur_comp_x1, cur_comp_x2),
+                title_a=f"Model A: {arch_a_str} ({act_a_str}) - {f_acc_a:.1f}%",
+                title_b=f"Model B: {arch_b_str} ({act_b_str}) - {f_acc_b:.1f}%",
+            )
+            plot_a_holder.pyplot(fig_a)
+            plot_b_holder.pyplot(fig_b)
+            curves_placeholder.pyplot(fig_c)
+            plt.close(fig_a)
+            plt.close(fig_b)
+            plt.close(fig_c)
+
+        # 4. Synchronized Interactive Inference Controls
+        with inference_placeholder.container():
+            st.markdown("### Synchronized 2D Inference: Compare Model Predictions")
+            st.markdown("Click on either decision boundary above or adjust coordinates $(x_1, x_2)$ below. Both models will evaluate the active point synchronously under `with no_grad():`.")
+
+            # Presets callbacks
+            def _cb_set_comp_coords(x1: float, x2: float):
+                st.session_state["comp_slider_x1"] = x1
+                st.session_state["comp_slider_x2"] = x2
+
+            def _cb_set_comp_random():
+                st.session_state["comp_slider_x1"] = float(np.round(np.random.uniform(-1.8, 1.8), 2))
+                st.session_state["comp_slider_x2"] = float(np.round(np.random.uniform(-1.8, 1.8), 2))
+
+            # Presets
+            p_col1, p_col2, p_col3, p_col4, p_col5 = st.columns(5)
+            with p_col1:
+                st.button("Origin (0.0, 0.0)", key="comp_preset_orig", width="stretch", on_click=_cb_set_comp_coords, args=(0.0, 0.0))
+            with p_col2:
+                st.button("Class 0 (-1.0, 0.5)", key="comp_preset_c0", width="stretch", on_click=_cb_set_comp_coords, args=(-1.0, 0.5))
+            with p_col3:
+                st.button("Class 1 (1.0, -0.5)", key="comp_preset_c1", width="stretch", on_click=_cb_set_comp_coords, args=(1.0, -0.5))
+            with p_col4:
+                st.button("Decision Border (0.5, 0.25)", key="comp_preset_bord", width="stretch", on_click=_cb_set_comp_coords, args=(0.5, 0.25))
+            with p_col5:
+                st.button("Random Point", key="comp_preset_rand", width="stretch", on_click=_cb_set_comp_random)
+
+            c_coord1, c_coord2 = st.columns(2)
+            with c_coord1:
+                test_x1 = st.slider("Coordinate X1 (Feature 1)", min_value=-2.5, max_value=2.5, step=0.05, key="comp_slider_x1")
+            with c_coord2:
+                test_x2 = st.slider("Coordinate X2 (Feature 2)", min_value=-2.5, max_value=2.5, step=0.05, key="comp_slider_x2")
+
+            # Point Predictions
+            pred_a, conf_a, probs_a = predict_point(model_a, test_x1, test_x2)
+            pred_b, conf_b, probs_b = predict_point(model_b, test_x1, test_x2)
+
+            # Dual Prediction Cards
+            pred_col_a, pred_col_b = st.columns(2, gap="large")
+            with pred_col_a:
+                color_a = "#3B82F6" if pred_a == 0 else "#EF4444"
+                st.markdown(
+                    f"""
+                    <div style="background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%); border: 1.5px solid {color_a}; border-radius: 12px; padding: 1.15rem; color: white;">
+                        <div style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; color: #94A3B8;">Model A Prediction ({arch_a_str})</div>
+                        <div style="font-size: 2.1rem; font-weight: 800; color: {color_a}; margin: 0.15rem 0;">Class {pred_a}</div>
+                        <div style="font-size: 1.05rem; font-weight: 600; color: #F1F5F9;">{conf_a * 100:.1f}% Confidence</div>
+                        <div class="prob-bar-container" style="margin-top: 0.6rem;">
+                            <div class="prob-bar-label"><span style="color: #3B82F6;">Class 0</span><span>{probs_a[0]*100:.1f}%</span></div>
+                            <div class="prob-bar-bg"><div class="prob-bar-fill-0" style="width: {probs_a[0]*100:.1f}%;"></div></div>
+                        </div>
+                        <div class="prob-bar-container" style="margin-top: 0.4rem;">
+                            <div class="prob-bar-label"><span style="color: #EF4444;">Class 1</span><span>{probs_a[1]*100:.1f}%</span></div>
+                            <div class="prob-bar-bg"><div class="prob-bar-fill-1" style="width: {probs_a[1]*100:.1f}%;"></div></div>
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+            with pred_col_b:
+                color_b = "#3B82F6" if pred_b == 0 else "#EF4444"
+                st.markdown(
+                    f"""
+                    <div style="background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%); border: 1.5px solid {color_b}; border-radius: 12px; padding: 1.15rem; color: white;">
+                        <div style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; color: #94A3B8;">Model B Prediction ({arch_b_str})</div>
+                        <div style="font-size: 2.1rem; font-weight: 800; color: {color_b}; margin: 0.15rem 0;">Class {pred_b}</div>
+                        <div style="font-size: 1.05rem; font-weight: 600; color: #F1F5F9;">{conf_b * 100:.1f}% Confidence</div>
+                        <div class="prob-bar-container" style="margin-top: 0.6rem;">
+                            <div class="prob-bar-label"><span style="color: #3B82F6;">Class 0</span><span>{probs_b[0]*100:.1f}%</span></div>
+                            <div class="prob-bar-bg"><div class="prob-bar-fill-0" style="width: {probs_b[0]*100:.1f}%;"></div></div>
+                        </div>
+                        <div class="prob-bar-container" style="margin-top: 0.4rem;">
+                            <div class="prob-bar-label"><span style="color: #EF4444;">Class 1</span><span>{probs_b[1]*100:.1f}%</span></div>
+                            <div class="prob-bar-bg"><div class="prob-bar-fill-1" style="width: {probs_b[1]*100:.1f}%;"></div></div>
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+            # Internals Expander for Comparison
+            with st.expander("Comparative Engine Internals & Layer Diagnostics", expanded=False):
+                tab_diag_a, tab_diag_b = st.tabs(["Model A Diagnostics", "Model B Diagnostics"])
+                with tab_diag_a:
+                    st.markdown(f"#### Model A Forward Trace ({test_x1:.2f}, {test_x2:.2f})")
+                    steps_a, sm_a = trace_forward_pass(model_a, test_x1, test_x2)
+                    st.dataframe(steps_a, width="stretch", hide_index=True)
+                    st.caption("Model A Parameters:")
+                    st.dataframe(get_parameter_diagnostics(model_a), width="stretch", hide_index=True)
+                    raw_a = get_layer_raw_weights(model_a)
+                    if raw_a:
+                        sel_a = st.selectbox("Inspect Model A Raw Parameter", options=list(raw_a.keys()), key="comp_raw_sel_a")
+                        arr_a = raw_a[sel_a]
+                        st.caption(f"Array Shape: {list(arr_a.shape)}")
+                        st.dataframe(arr_a.reshape(1, -1) if arr_a.ndim == 1 else arr_a, width="stretch")
+
+                with tab_diag_b:
+                    st.markdown(f"#### Model B Forward Trace ({test_x1:.2f}, {test_x2:.2f})")
+                    steps_b, sm_b = trace_forward_pass(model_b, test_x1, test_x2)
+                    st.dataframe(steps_b, width="stretch", hide_index=True)
+                    st.caption("Model B Parameters:")
+                    st.dataframe(get_parameter_diagnostics(model_b), width="stretch", hide_index=True)
+                    raw_b = get_layer_raw_weights(model_b)
+                    if raw_b:
+                        sel_b = st.selectbox("Inspect Model B Raw Parameter", options=list(raw_b.keys()), key="comp_raw_sel_b")
+                        arr_b = raw_b[sel_b]
+                        st.caption(f"Array Shape: {list(arr_b.shape)}")
+                        st.dataframe(arr_b.reshape(1, -1) if arr_b.ndim == 1 else arr_b, width="stretch")
+
+    elif not start_training:
+        init_a = build_model(num_layers_a, hidden_dim_a, act_a, bn_a, dropout_a)
+        init_b = build_model(num_layers_b, hidden_dim_b, act_b, bn_b, dropout_b)
+        if HAS_PLOTLY:
+            fig_a_plotly = plot_plotly_decision_boundary(init_a, X, y, title="Model A (Untrained Baseline)")
+            fig_b_plotly = plot_plotly_decision_boundary(init_b, X, y, title="Model B (Untrained Baseline)")
+            plot_a_holder.plotly_chart(fig_a_plotly, on_select="rerun", selection_mode=["points"], key="plotly_comp_init_a", width="stretch")
+            plot_b_holder.plotly_chart(fig_b_plotly, on_select="rerun", selection_mode=["points"], key="plotly_comp_init_b", width="stretch")
+            _, _, fig_c = plot_comparison_dashboard_figures(
+                init_a, init_b, X, y, [0.693], [50.0], [0.693], [50.0],
+                title_a="Model A", title_b="Model B",
+            )
+            curves_placeholder.pyplot(fig_c)
+            plt.close(fig_c)
+        else:
+            fig_a, fig_b, fig_c = plot_comparison_dashboard_figures(
+                init_a, init_b, X, y, [0.693], [50.0], [0.693], [50.0],
+                title_a=f"Model A (Untrained Baseline)",
+                title_b=f"Model B (Untrained Baseline)",
+            )
+            plot_a_holder.pyplot(fig_a)
+            plot_b_holder.pyplot(fig_b)
+            curves_placeholder.pyplot(fig_c)
+            plt.close(fig_a)
+            plt.close(fig_b)
+            plt.close(fig_c)
+
+        with inference_placeholder.container():
+            st.info("Configure Model A and Model B in the sidebar and click **Train Both Models (A & B)** to start the comparative experiment.")
+
+
+def render_decision_boundary_tab():
+    """Renders the 2D Decision Boundary laboratory supporting Single Model and Model Comparison modes."""
+    studio_submode = st.segmented_control(
+        "2D Studio Mode",
+        options=["Single Model Studio", "Model Comparison (A vs B)"],
+        default="Single Model Studio",
+        key="2d_studio_mode_selector",
+    )
+    if not studio_submode:
+        studio_submode = "Single Model Studio"
+
+    if studio_submode == "Single Model Studio":
+        render_single_model_studio()
+    else:
+        render_model_comparison_studio()
 
 
 # -----------------------------------------------------------------------------
@@ -800,31 +2056,35 @@ def render_mnist_inference_tab():
                 st.session_state["stroke_history"] = current_objects
                 st.session_state["redo_stack"] = []
 
+        # Native Action Buttons Callbacks
+        def _cb_canvas_undo():
+            if st.session_state.get("stroke_history"):
+                popped = st.session_state["stroke_history"].pop()
+                st.session_state.setdefault("redo_stack", []).append(popped)
+                st.session_state["canvas_key"] = st.session_state.get("canvas_key", 0) + 1
+                st.session_state["needs_sync"] = True
+
+        def _cb_canvas_redo():
+            if st.session_state.get("redo_stack"):
+                restored = st.session_state["redo_stack"].pop()
+                st.session_state.setdefault("stroke_history", []).append(restored)
+                st.session_state["canvas_key"] = st.session_state.get("canvas_key", 0) + 1
+                st.session_state["needs_sync"] = True
+
+        def _cb_canvas_clear():
+            st.session_state["stroke_history"] = []
+            st.session_state["redo_stack"] = []
+            st.session_state["canvas_key"] = st.session_state.get("canvas_key", 0) + 1
+            st.session_state["needs_sync"] = True
+
         # Native Action Buttons Row
         c1, c2, c3 = st.columns(3)
         with c1:
-            if st.button("Undo", use_container_width=True):
-                if st.session_state.get("stroke_history"):
-                    popped = st.session_state["stroke_history"].pop()
-                    st.session_state.setdefault("redo_stack", []).append(popped)
-                    st.session_state["canvas_key"] = st.session_state.get("canvas_key", 0) + 1
-                    st.session_state["needs_sync"] = True
-                    st.rerun()
+            st.button("Undo", width="stretch", key="mnist_undo", on_click=_cb_canvas_undo)
         with c2:
-            if st.button("Redo", use_container_width=True):
-                if st.session_state.get("redo_stack"):
-                    restored = st.session_state["redo_stack"].pop()
-                    st.session_state.setdefault("stroke_history", []).append(restored)
-                    st.session_state["canvas_key"] = st.session_state.get("canvas_key", 0) + 1
-                    st.session_state["needs_sync"] = True
-                    st.rerun()
+            st.button("Redo", width="stretch", key="mnist_redo", on_click=_cb_canvas_redo)
         with c3:
-            if st.button("Clear", use_container_width=True):
-                st.session_state["stroke_history"] = []
-                st.session_state["redo_stack"] = []
-                st.session_state["canvas_key"] = st.session_state.get("canvas_key", 0) + 1
-                st.session_state["needs_sync"] = True
-                st.rerun()
+            st.button("Clear", width="stretch", key="mnist_clear", on_click=_cb_canvas_clear)
 
         # Preprocess and show thumbnail
         processed = preprocess_canvas_image(canvas_result)
