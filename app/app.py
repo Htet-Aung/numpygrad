@@ -2725,6 +2725,55 @@ def render_neural_pathfinding_tab():
                     st.session_state.pop("rover_sim_a", None)
                     st.session_state.pop("rover_sim_b", None)
 
+    # Helper callback to update coordinates cleanly BEFORE widgets instantiate
+    def _update_waypoint_coords(
+        sx1=None, sx2=None, tx1=None, tx2=None,
+        dsx1=0.0, dsx2=0.0, dtx1=0.0, dtx2=0.0,
+        swap=False, auto=False
+    ):
+        if auto and active_eval_model is not None:
+            try:
+                auto_s, auto_t = find_safe_waypoints(active_eval_model)
+                st.session_state["rover_start_x1"] = float(auto_s[0])
+                st.session_state["rover_start_x2"] = float(auto_s[1])
+                st.session_state["rover_target_x1"] = float(auto_t[0])
+                st.session_state["rover_target_x2"] = float(auto_t[1])
+            except Exception:
+                pass
+        elif swap:
+            cur_s1 = st.session_state.get("rover_start_x1", -1.80)
+            cur_s2 = st.session_state.get("rover_start_x2", 1.20)
+            cur_t1 = st.session_state.get("rover_target_x1", 1.20)
+            cur_t2 = st.session_state.get("rover_target_x2", 0.70)
+            st.session_state["rover_start_x1"] = cur_t1
+            st.session_state["rover_start_x2"] = cur_t2
+            st.session_state["rover_target_x1"] = cur_s1
+            st.session_state["rover_target_x2"] = cur_s2
+        else:
+            if sx1 is not None:
+                st.session_state["rover_start_x1"] = float(sx1)
+            elif dsx1 != 0.0:
+                st.session_state["rover_start_x1"] = max(-2.4, min(2.4, round(st.session_state.get("rover_start_x1", -1.80) + dsx1, 2)))
+
+            if sx2 is not None:
+                st.session_state["rover_start_x2"] = float(sx2)
+            elif dsx2 != 0.0:
+                st.session_state["rover_start_x2"] = max(-2.4, min(2.4, round(st.session_state.get("rover_start_x2", 1.20) + dsx2, 2)))
+
+            if tx1 is not None:
+                st.session_state["rover_target_x1"] = float(tx1)
+            elif dtx1 != 0.0:
+                st.session_state["rover_target_x1"] = max(-2.4, min(2.4, round(st.session_state.get("rover_target_x1", 1.20) + dtx1, 2)))
+
+            if tx2 is not None:
+                st.session_state["rover_target_x2"] = float(tx2)
+            elif dtx2 != 0.0:
+                st.session_state["rover_target_x2"] = max(-2.4, min(2.4, round(st.session_state.get("rover_target_x2", 0.70) + dtx2, 2)))
+
+        st.session_state.pop("rover_sim", None)
+        st.session_state.pop("rover_sim_a", None)
+        st.session_state.pop("rover_sim_b", None)
+
     # ---------------- Sidebar Controls ----------------
     with st.sidebar:
         st.header("Rover Navigation Controls")
@@ -2733,77 +2782,61 @@ def render_neural_pathfinding_tab():
         # Action buttons
         col_act1, col_act2 = st.columns(2)
         with col_act1:
-            if st.button("Auto-Detect Route", width="stretch", key="btn_auto_safe_route", help="Queries the neural network to discover optimal Start and Target waypoints in free space (P < 0.20)."):
-                if active_eval_model is not None:
-                    auto_s, auto_t = find_safe_waypoints(active_eval_model)
-                    st.session_state["rover_start_x1"] = auto_s[0]
-                    st.session_state["rover_start_x2"] = auto_s[1]
-                    st.session_state["rover_target_x1"] = auto_t[0]
-                    st.session_state["rover_target_x2"] = auto_t[1]
-                    st.session_state.pop("rover_sim", None)
-                    st.session_state.pop("rover_sim_a", None)
-                    st.session_state.pop("rover_sim_b", None)
-                    st.rerun()
+            st.button(
+                "Auto-Detect Route",
+                width="stretch",
+                key="btn_auto_safe_route",
+                on_click=_update_waypoint_coords,
+                kwargs={"auto": True},
+                help="Queries the neural network to discover optimal Start and Target waypoints in free space (P < 0.20).",
+            )
         with col_act2:
-            if st.button("Invert Route", width="stretch", key="btn_swap_route", help="Swaps Start (S) and Target (T)."):
-                sx1 = st.session_state.get("rover_start_x1", -1.80)
-                sx2 = st.session_state.get("rover_start_x2", 1.20)
-                tx1 = st.session_state.get("rover_target_x1", 1.20)
-                tx2 = st.session_state.get("rover_target_x2", 0.70)
-                st.session_state["rover_start_x1"] = tx1
-                st.session_state["rover_start_x2"] = tx2
-                st.session_state["rover_target_x1"] = sx1
-                st.session_state["rover_target_x2"] = sx2
-                st.session_state.pop("rover_sim", None)
-                st.session_state.pop("rover_sim_a", None)
-                st.session_state.pop("rover_sim_b", None)
-                st.rerun()
+            st.button(
+                "Invert Route",
+                width="stretch",
+                key="btn_swap_route",
+                on_click=_update_waypoint_coords,
+                kwargs={"swap": True},
+                help="Swaps Start (S) and Target (T).",
+            )
 
         # Preset routes
         st.caption("Quick Preset Waypoints:")
         preset_cols = st.columns(2)
         with preset_cols[0]:
-            if st.button("Moon Ridge", width="stretch", key="preset_moon_ridge"):
-                st.session_state["rover_start_x1"] = -1.80
-                st.session_state["rover_start_x2"] = 1.20
-                st.session_state["rover_target_x1"] = 1.20
-                st.session_state["rover_target_x2"] = 0.70
-                st.session_state.pop("rover_sim", None)
-                st.session_state.pop("rover_sim_a", None)
-                st.session_state.pop("rover_sim_b", None)
-                st.rerun()
+            st.button(
+                "Moon Ridge",
+                width="stretch",
+                key="preset_moon_ridge",
+                on_click=_update_waypoint_coords,
+                kwargs={"sx1": -1.80, "sx2": 1.20, "tx1": 1.20, "tx2": 0.70},
+            )
         with preset_cols[1]:
-            if st.button("Moon Channel", width="stretch", key="preset_moon_channel"):
-                st.session_state["rover_start_x1"] = -1.50
-                st.session_state["rover_start_x2"] = 0.80
-                st.session_state["rover_target_x1"] = 0.80
-                st.session_state["rover_target_x2"] = -0.20
-                st.session_state.pop("rover_sim", None)
-                st.session_state.pop("rover_sim_a", None)
-                st.session_state.pop("rover_sim_b", None)
-                st.rerun()
+            st.button(
+                "Moon Channel",
+                width="stretch",
+                key="preset_moon_channel",
+                on_click=_update_waypoint_coords,
+                kwargs={"sx1": -1.50, "sx2": 0.80, "tx1": 0.80, "tx2": -0.20},
+            )
 
         preset_cols_2 = st.columns(2)
         with preset_cols_2[0]:
-            if st.button("Ring Bypass", width="stretch", key="preset_ring_bypass"):
-                st.session_state["rover_start_x1"] = -1.80
-                st.session_state["rover_start_x2"] = 0.00
-                st.session_state["rover_target_x1"] = 1.80
-                st.session_state["rover_target_x2"] = 0.00
-                st.session_state.pop("rover_sim", None)
-                st.session_state.pop("rover_sim_a", None)
-                st.session_state.pop("rover_sim_b", None)
-                st.rerun()
+            st.button(
+                "Ring Bypass",
+                width="stretch",
+                key="preset_ring_bypass",
+                on_click=_update_waypoint_coords,
+                kwargs={"sx1": -1.80, "sx2": 0.00, "tx1": 1.80, "tx2": 0.00},
+            )
         with preset_cols_2[1]:
-            if st.button("Spiral Run", width="stretch", key="preset_spiral_run"):
-                st.session_state["rover_start_x1"] = -1.80
-                st.session_state["rover_start_x2"] = -1.80
-                st.session_state["rover_target_x1"] = 1.80
-                st.session_state["rover_target_x2"] = 1.80
-                st.session_state.pop("rover_sim", None)
-                st.session_state.pop("rover_sim_a", None)
-                st.session_state.pop("rover_sim_b", None)
-                st.rerun()
+            st.button(
+                "Spiral Run",
+                width="stretch",
+                key="preset_spiral_run",
+                on_click=_update_waypoint_coords,
+                kwargs={"sx1": -1.80, "sx2": -1.80, "tx1": 1.80, "tx2": 1.80},
+            )
 
         start_x1 = st.slider("Start Position x1", -2.4, 2.4, st.session_state.get("rover_start_x1", -1.80), 0.05, key="rover_start_x1")
         start_x2 = st.slider("Start Position x2", -2.4, 2.4, st.session_state.get("rover_start_x2", 1.20), 0.05, key="rover_start_x2")
@@ -2812,42 +2845,74 @@ def render_neural_pathfinding_tab():
 
         with st.expander("Waypoint Micro-Nudge Controls", expanded=False):
             st.caption("Nudge Start (S) Position (0.10 step):")
-            ns_cols = st.columns(4)
-            if ns_cols[0].button("S Left", key="nudge_s_left"):
-                st.session_state["rover_start_x1"] = max(-2.4, round(st.session_state.get("rover_start_x1", -1.80) - 0.10, 2))
-                st.session_state.pop("rover_sim", None)
-                st.rerun()
-            if ns_cols[1].button("S Right", key="nudge_s_right"):
-                st.session_state["rover_start_x1"] = min(2.4, round(st.session_state.get("rover_start_x1", -1.80) + 0.10, 2))
-                st.session_state.pop("rover_sim", None)
-                st.rerun()
-            if ns_cols[2].button("S Down", key="nudge_s_down"):
-                st.session_state["rover_start_x2"] = max(-2.4, round(st.session_state.get("rover_start_x2", 1.20) - 0.10, 2))
-                st.session_state.pop("rover_sim", None)
-                st.rerun()
-            if ns_cols[3].button("S Up", key="nudge_s_up"):
-                st.session_state["rover_start_x2"] = min(2.4, round(st.session_state.get("rover_start_x2", 1.20) + 0.10, 2))
-                st.session_state.pop("rover_sim", None)
-                st.rerun()
+            col_ns1, col_ns2 = st.columns(2)
+            col_ns1.button(
+                "Start X -0.1",
+                width="stretch",
+                key="nudge_s_xm",
+                on_click=_update_waypoint_coords,
+                kwargs={"dsx1": -0.10},
+                help="Move Start point left along X1",
+            )
+            col_ns2.button(
+                "Start X +0.1",
+                width="stretch",
+                key="nudge_s_xp",
+                on_click=_update_waypoint_coords,
+                kwargs={"dsx1": 0.10},
+                help="Move Start point right along X1",
+            )
+            col_ns1.button(
+                "Start Y -0.1",
+                width="stretch",
+                key="nudge_s_ym",
+                on_click=_update_waypoint_coords,
+                kwargs={"dsx2": -0.10},
+                help="Move Start point down along X2",
+            )
+            col_ns2.button(
+                "Start Y +0.1",
+                width="stretch",
+                key="nudge_s_yp",
+                on_click=_update_waypoint_coords,
+                kwargs={"dsx2": 0.10},
+                help="Move Start point up along X2",
+            )
 
             st.caption("Nudge Target (T) Position (0.10 step):")
-            nt_cols = st.columns(4)
-            if nt_cols[0].button("T Left", key="nudge_t_left"):
-                st.session_state["rover_target_x1"] = max(-2.4, round(st.session_state.get("rover_target_x1", 1.20) - 0.10, 2))
-                st.session_state.pop("rover_sim", None)
-                st.rerun()
-            if nt_cols[1].button("T Right", key="nudge_t_right"):
-                st.session_state["rover_target_x1"] = min(2.4, round(st.session_state.get("rover_target_x1", 1.20) + 0.10, 2))
-                st.session_state.pop("rover_sim", None)
-                st.rerun()
-            if nt_cols[2].button("T Down", key="nudge_t_down"):
-                st.session_state["rover_target_x2"] = max(-2.4, round(st.session_state.get("rover_target_x2", 0.70) - 0.10, 2))
-                st.session_state.pop("rover_sim", None)
-                st.rerun()
-            if nt_cols[3].button("T Up", key="nudge_t_up"):
-                st.session_state["rover_target_x2"] = min(2.4, round(st.session_state.get("rover_target_x2", 0.70) + 0.10, 2))
-                st.session_state.pop("rover_sim", None)
-                st.rerun()
+            col_nt1, col_nt2 = st.columns(2)
+            col_nt1.button(
+                "Target X -0.1",
+                width="stretch",
+                key="nudge_t_xm",
+                on_click=_update_waypoint_coords,
+                kwargs={"dtx1": -0.10},
+                help="Move Target point left along X1",
+            )
+            col_nt2.button(
+                "Target X +0.1",
+                width="stretch",
+                key="nudge_t_xp",
+                on_click=_update_waypoint_coords,
+                kwargs={"dtx1": 0.10},
+                help="Move Target point right along X1",
+            )
+            col_nt1.button(
+                "Target Y -0.1",
+                width="stretch",
+                key="nudge_t_ym",
+                on_click=_update_waypoint_coords,
+                kwargs={"dtx2": -0.10},
+                help="Move Target point down along X2",
+            )
+            col_nt2.button(
+                "Target Y +0.1",
+                width="stretch",
+                key="nudge_t_yp",
+                on_click=_update_waypoint_coords,
+                kwargs={"dtx2": 0.10},
+                help="Move Target point up along X2",
+            )
 
         # Live coordinate guidance and obstacle warning
         if active_eval_model is not None:
