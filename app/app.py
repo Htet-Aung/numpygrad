@@ -339,8 +339,73 @@ st.markdown(
 
 
 # -----------------------------------------------------------------------------
-# Synthetic Dataset Generators (Pure NumPy)
+# Synthetic & Custom Dataset Generators (Pure NumPy)
 # -----------------------------------------------------------------------------
+
+def load_custom_maze_preset() -> Tuple[List[List[float]], List[int]]:
+    """Generates an initial obstacle maze barrier layout for Custom Canvas."""
+    pts_X: List[List[float]] = []
+    pts_y: List[int] = []
+    rng = np.random.default_rng(42)
+
+    # Class 1 (Red Obstacle Walls):
+    # Left vertical wall at x=-0.7 with opening at middle-top
+    for y_val in np.linspace(-2.0, 0.2, 14):
+        pts_X.append([round(-0.7 + float(rng.normal(0, 0.03)), 3), round(float(y_val), 3)])
+        pts_y.append(1)
+    for y_val in np.linspace(1.0, 2.0, 7):
+        pts_X.append([round(-0.7 + float(rng.normal(0, 0.03)), 3), round(float(y_val), 3)])
+        pts_y.append(1)
+
+    # Right vertical wall at x=0.7 with opening at middle-bottom
+    for y_val in np.linspace(-2.0, -1.0, 7):
+        pts_X.append([round(0.7 + float(rng.normal(0, 0.03)), 3), round(float(y_val), 3)])
+        pts_y.append(1)
+    for y_val in np.linspace(-0.2, 2.0, 14):
+        pts_X.append([round(0.7 + float(rng.normal(0, 0.03)), 3), round(float(y_val), 3)])
+        pts_y.append(1)
+
+    # Class 0 (Blue Free Space Corridors):
+    for y_val in np.linspace(-1.8, 1.8, 10):
+        pts_X.append([round(-1.6 + float(rng.normal(0, 0.04)), 3), round(float(y_val), 3)])
+        pts_y.append(0)
+    for y_val in np.linspace(-1.8, 1.8, 10):
+        pts_X.append([round(0.0 + float(rng.normal(0, 0.04)), 3), round(float(y_val), 3)])
+        pts_y.append(0)
+    for y_val in np.linspace(-1.8, 1.8, 10):
+        pts_X.append([round(1.6 + float(rng.normal(0, 0.04)), 3), round(float(y_val), 3)])
+        pts_y.append(0)
+
+    return pts_X, pts_y
+
+
+def load_custom_ring_preset() -> Tuple[List[List[float]], List[int]]:
+    """Generates an island ring obstacle layout for Custom Canvas."""
+    pts_X: List[List[float]] = []
+    pts_y: List[int] = []
+    rng = np.random.default_rng(42)
+
+    # Class 1 (Red): Obstacle Ring
+    angles = np.linspace(0, 2 * np.pi, 24, endpoint=False)
+    for a in angles:
+        pts_X.append([
+            round(1.2 * float(np.cos(a)) + float(rng.normal(0, 0.04)), 3),
+            round(1.2 * float(np.sin(a)) + float(rng.normal(0, 0.04)), 3),
+        ])
+        pts_y.append(1)
+
+    # Class 0 (Blue): Center Hub and Outer perimeter
+    hub_angles = np.linspace(0, 2 * np.pi, 8, endpoint=False)
+    for a in hub_angles:
+        pts_X.append([round(0.35 * float(np.cos(a)), 3), round(0.35 * float(np.sin(a)), 3)])
+        pts_y.append(0)
+    outer_angles = np.linspace(0, 2 * np.pi, 16, endpoint=False)
+    for a in outer_angles:
+        pts_X.append([round(2.0 * float(np.cos(a)), 3), round(2.0 * float(np.sin(a)), 3)])
+        pts_y.append(0)
+
+    return pts_X, pts_y
+
 
 def generate_dataset(
     dataset_name: str,
@@ -348,7 +413,17 @@ def generate_dataset(
     noise: float = 0.1,
     random_state: int = 42,
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """Generates 2D classification datasets using pure NumPy."""
+    """Generates 2D classification datasets using pure NumPy or retrieves custom canvas points."""
+    if dataset_name == "Custom Canvas":
+        custom_X = st.session_state.get("custom_points_X")
+        custom_y = st.session_state.get("custom_points_y")
+        if custom_X is None or custom_y is None or len(custom_X) == 0:
+            init_X, init_y = load_custom_maze_preset()
+            st.session_state["custom_points_X"] = init_X
+            st.session_state["custom_points_y"] = init_y
+            custom_X, custom_y = init_X, init_y
+        return np.array(custom_X, dtype=np.float32), np.array(custom_y, dtype=np.int64)
+
     rng = np.random.default_rng(random_state)
     n_samples_out = n_samples // 2
     n_samples_in = n_samples - n_samples_out
@@ -397,6 +472,11 @@ def generate_dataset(
         X = np.vstack(X_list)
         y = np.hstack(y_list)
         return X.astype(np.float32), y
+
+    else:
+        # Default fallback
+        X = rng.normal(size=(n_samples, 2))
+        y = (X[:, 0] * X[:, 1] > 0).astype(int)
 
     if noise > 0.0:
         X += rng.normal(scale=noise, size=X.shape)
@@ -601,6 +681,128 @@ def get_model_gradient_norms(model: nn.Module) -> Dict[str, float]:
 # -----------------------------------------------------------------------------
 # Decision Boundary & Training Curves Plotting
 # -----------------------------------------------------------------------------
+
+def plot_plotly_custom_canvas(
+    X: np.ndarray,
+    y: np.ndarray,
+    title: str = "Custom 2D Canvas (Click anywhere to drop data points)",
+) -> Optional[Any]:
+    """Generates an interactive canvas for custom data point placement with direct click support."""
+    if not HAS_PLOTLY:
+        return None
+
+    fig = go.Figure()
+
+    # 1. Dark Grid Background Surface
+    fig.add_shape(
+        type="rect",
+        x0=-2.5, y0=-2.5, x1=2.5, y1=2.5,
+        fillcolor="#0B1120",
+        line=dict(color="#334155", width=1.5),
+        layer="below",
+    )
+
+    # 2. Dense Invisible Click-Capture Grid (enables direct click placement anywhere)
+    grid_click_x = np.linspace(-2.45, 2.45, 50)
+    grid_click_y = np.linspace(-2.45, 2.45, 50)
+    cg_x, cg_y = np.meshgrid(grid_click_x, grid_click_y)
+    fig.add_trace(
+        go.Scatter(
+            x=cg_x.ravel(),
+            y=cg_y.ravel(),
+            mode="markers",
+            name="Click Capture Grid",
+            marker=dict(size=20, color="rgba(255, 255, 255, 0.01)"),
+            hoverinfo="none",
+            showlegend=False,
+            selected=dict(marker=dict(opacity=0.01)),
+            unselected=dict(marker=dict(opacity=0.01)),
+        )
+    )
+
+    # 3. Placed Data Points
+    if len(X) > 0 and len(y) > 0:
+        mask_0 = (y == 0)
+        mask_1 = (y == 1)
+
+        if np.any(mask_0):
+            fig.add_trace(
+                go.Scatter(
+                    x=X[mask_0, 0],
+                    y=X[mask_0, 1],
+                    mode="markers",
+                    name=f"Class 0 (Blue) [N={int(np.sum(mask_0))}]",
+                    marker=dict(
+                        color="#3B82F6",
+                        size=9,
+                        line=dict(width=1.5, color="#FFFFFF"),
+                        opacity=0.95,
+                    ),
+                    selected=dict(marker=dict(opacity=0.95)),
+                    unselected=dict(marker=dict(opacity=0.95)),
+                    hovertext=[f"Class 0 ({X[i, 0]:.2f}, {X[i, 1]:.2f})" for i in np.where(mask_0)[0]],
+                    hoverinfo="text",
+                )
+            )
+
+        if np.any(mask_1):
+            fig.add_trace(
+                go.Scatter(
+                    x=X[mask_1, 0],
+                    y=X[mask_1, 1],
+                    mode="markers",
+                    name=f"Class 1 (Red) [N={int(np.sum(mask_1))}]",
+                    marker=dict(
+                        color="#EF4444",
+                        size=9,
+                        line=dict(width=1.5, color="#FFFFFF"),
+                        symbol="diamond",
+                        opacity=0.95,
+                    ),
+                    selected=dict(marker=dict(opacity=0.95)),
+                    unselected=dict(marker=dict(opacity=0.95)),
+                    hovertext=[f"Class 1 ({X[i, 0]:.2f}, {X[i, 1]:.2f})" for i in np.where(mask_1)[0]],
+                    hoverinfo="text",
+                )
+            )
+
+    fig.update_layout(
+        title=dict(text=title, font=dict(size=14, color="#F8FAFC")),
+        xaxis=dict(
+            title=dict(text="Feature x1", font=dict(color="#CBD5E1")),
+            tickfont=dict(color="#CBD5E1"),
+            gridcolor="#1E293B",
+            zeroline=True,
+            zerolinecolor="#475569",
+            fixedrange=True,
+            range=[-2.5, 2.5],
+        ),
+        yaxis=dict(
+            title=dict(text="Feature x2", font=dict(color="#CBD5E1")),
+            tickfont=dict(color="#CBD5E1"),
+            gridcolor="#1E293B",
+            zeroline=True,
+            zerolinecolor="#475569",
+            fixedrange=True,
+            range=[-2.5, 2.5],
+        ),
+        clickmode="event+select",
+        margin=dict(l=20, r=20, t=40, b=20),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+            font=dict(size=10, color="#CBD5E1"),
+            bgcolor="rgba(15, 23, 42, 0.7)",
+        ),
+        paper_bgcolor="#0F172A",
+        plot_bgcolor="#0F172A",
+        height=480,
+    )
+    return fig
+
 
 def plot_plotly_decision_boundary(
     model: nn.Module,
@@ -1610,6 +1812,62 @@ def plot_probability_distribution(probs: np.ndarray) -> plt.Figure:
 
 def render_single_model_studio():
     """Renders the Single Model 2D Decision Boundary training & interactive inference laboratory."""
+    # 0. Session state initialization for Custom Canvas
+    if "custom_points_X" not in st.session_state or "custom_points_y" not in st.session_state:
+        init_X, init_y = load_custom_maze_preset()
+        st.session_state["custom_points_X"] = init_X
+        st.session_state["custom_points_y"] = init_y
+
+    # Process custom canvas clicks before sidebar widgets instantiate
+    canvas_event = st.session_state.get("custom_2d_canvas")
+    if isinstance(canvas_event, dict):
+        pts = canvas_event.get("selection", {}).get("points", [])
+        if pts and "x" in pts[0] and "y" in pts[0]:
+            cx = float(np.round(pts[0]["x"], 2))
+            cy = float(np.round(pts[0]["y"], 2))
+            click_tag = ("custom_canvas", cx, cy, len(st.session_state.get("custom_points_X", [])))
+            if st.session_state.get("_last_canvas_click_tag") != click_tag:
+                st.session_state["_last_canvas_click_tag"] = click_tag
+                drop_mode = st.session_state.get("custom_drop_class", "Class 0 (Blue / Free Space)")
+                c_idx = 1 if "Class 1" in drop_mode else 0
+                density = st.session_state.get("custom_brush_density", "Single Point")
+
+                if "Cluster" in density:
+                    rng_c = np.random.default_rng()
+                    for _ in range(5):
+                        jx = float(np.clip(round(cx + rng_c.normal(0, 0.08), 3), -2.4, 2.4))
+                        jy = float(np.clip(round(cy + rng_c.normal(0, 0.08), 3), -2.4, 2.4))
+                        st.session_state["custom_points_X"].append([jx, jy])
+                        st.session_state["custom_points_y"].append(c_idx)
+                else:
+                    st.session_state["custom_points_X"].append([cx, cy])
+                    st.session_state["custom_points_y"].append(c_idx)
+
+                # Reset trained model on custom canvas since data changed
+                if st.session_state.get("trained_2d_model", {}).get("dataset_name") == "Custom Canvas":
+                    st.session_state.pop("trained_2d_model", None)
+
+    # Callbacks for custom canvas controls
+    def _cb_load_custom_maze():
+        m_x, m_y = load_custom_maze_preset()
+        st.session_state["custom_points_X"] = m_x
+        st.session_state["custom_points_y"] = m_y
+        if st.session_state.get("trained_2d_model", {}).get("dataset_name") == "Custom Canvas":
+            st.session_state.pop("trained_2d_model", None)
+
+    def _cb_load_custom_ring():
+        r_x, r_y = load_custom_ring_preset()
+        st.session_state["custom_points_X"] = r_x
+        st.session_state["custom_points_y"] = r_y
+        if st.session_state.get("trained_2d_model", {}).get("dataset_name") == "Custom Canvas":
+            st.session_state.pop("trained_2d_model", None)
+
+    def _cb_clear_custom_canvas():
+        st.session_state["custom_points_X"] = []
+        st.session_state["custom_points_y"] = []
+        if st.session_state.get("trained_2d_model", {}).get("dataset_name") == "Custom Canvas":
+            st.session_state.pop("trained_2d_model", None)
+
     # ---------------- Sidebar Controls ----------------
     with st.sidebar:
         st.header("Experiment Controls")
@@ -1618,13 +1876,37 @@ def render_single_model_studio():
         st.subheader("1. Dataset Configuration")
         dataset_name = st.selectbox(
             "Dataset Topology",
-            ["Two Moons", "Concentric Circles", "Spirals"],
+            ["Two Moons", "Concentric Circles", "Spirals", "Custom Canvas"],
             index=0,
             key="single_dataset_name",
         )
-        n_samples = st.slider("Sample Count", min_value=100, max_value=1000, value=500, step=50, key="single_n_samples")
-        noise = st.slider("Noise Level", min_value=0.0, max_value=0.3, value=0.12, step=0.02, key="single_noise")
-        seed = st.number_input("Random Seed", min_value=0, max_value=9999, value=42, step=1, key="single_seed")
+        if dataset_name == "Custom Canvas":
+            st.caption("Interactive Canvas Drawing Controls:")
+            st.radio(
+                "Drop Class:",
+                ["Class 0 (Blue / Free Space)", "Class 1 (Red / Obstacle)"],
+                horizontal=True,
+                key="custom_drop_class",
+                help="Select which class of point to drop when clicking on the 2D grid.",
+            )
+            st.radio(
+                "Brush Density:",
+                ["Single Point", "Scatter Cluster (5 pts)"],
+                horizontal=True,
+                key="custom_brush_density",
+                help="Single point drops 1 coordinate; Scatter cluster drops 5 jittered points.",
+            )
+            c_p1, c_p2 = st.columns(2)
+            c_p1.button("Load Maze", width="stretch", key="btn_load_maze", on_click=_cb_load_custom_maze, help="Load obstacle maze barrier preset.")
+            c_p2.button("Load Ring", width="stretch", key="btn_load_ring", on_click=_cb_load_custom_ring, help="Load island ring obstacle preset.")
+            st.button("Clear Custom Data", width="stretch", key="btn_clear_canvas", on_click=_cb_clear_custom_canvas, help="Clears all custom points from canvas.")
+            n_samples = len(st.session_state.get("custom_points_X", []))
+            noise = 0.0
+            seed = 42
+        else:
+            n_samples = st.slider("Sample Count", min_value=100, max_value=1000, value=500, step=50, key="single_n_samples")
+            noise = st.slider("Noise Level", min_value=0.0, max_value=0.3, value=0.12, step=0.02, key="single_noise")
+            seed = st.number_input("Random Seed", min_value=0, max_value=9999, value=42, step=1, key="single_seed")
 
         # 2. Architecture Settings
         st.subheader("2. Model Architecture")
@@ -1692,6 +1974,17 @@ def render_single_model_studio():
     inference_placeholder = st.empty()
 
     # ---------------- Interactive Training Loop ----------------
+    if start_training:
+        if dataset_name == "Custom Canvas":
+            c0_count = int(np.sum(y == 0)) if len(y) > 0 else 0
+            c1_count = int(np.sum(y == 1)) if len(y) > 0 else 0
+            if c0_count < 5 or c1_count < 5:
+                status_placeholder.warning(
+                    f"Insufficient custom points: You currently have {c0_count} Class 0 (Blue) and {c1_count} Class 1 (Red) points. "
+                    "Please place at least 5 points for each class on the canvas (or click 'Load Maze' in the sidebar) before training."
+                )
+                start_training = False
+
     if start_training:
         model = build_model(num_layers, hidden_dim, activation_name, use_batchnorm, dropout_p)
         criterion = nn.CrossEntropyLoss()
@@ -2043,25 +2336,73 @@ def render_single_model_studio():
                     st.info("Train the model to visualize post-backpropagation gradient flow across layers.")
 
     elif not start_training:
-        # Initial static plot before training starts
-        initial_model = build_model(num_layers, hidden_dim, activation_name, use_batchnorm, dropout_p)
-        if HAS_PLOTLY:
-            fig_b_plotly = plot_plotly_decision_boundary(initial_model, X, y, title="Untrained Initial Decision Boundary")
-            plot_left.plotly_chart(
-                fig_b_plotly,
-                key="plotly_single_init",
-                config={"displayModeBar": False, "scrollZoom": False},
-                width="stretch",
-            )
-            _, fig_m = plot_dashboard_figures(initial_model, X, y, [0.693], [50.0])
-            plot_right.pyplot(fig_m)
-            plt.close(fig_m)
+        if dataset_name == "Custom Canvas":
+            c0_count = int(np.sum(y == 0)) if len(y) > 0 else 0
+            c1_count = int(np.sum(y == 1)) if len(y) > 0 else 0
+            if HAS_PLOTLY:
+                fig_custom = plot_plotly_custom_canvas(
+                    X, y,
+                    title=f"Custom 2D Canvas (Click anywhere to drop data) - Total: {len(X)} pts (Blue: {c0_count}, Red: {c1_count})"
+                )
+                plot_left.plotly_chart(
+                    fig_custom,
+                    on_select="rerun",
+                    selection_mode=["points"],
+                    key="custom_2d_canvas",
+                    config={"displayModeBar": False, "scrollZoom": False},
+                    width="stretch",
+                )
+            else:
+                fig_b, _ = plot_dashboard_figures(None, X, y, [0.693], [50.0])
+                plot_left.pyplot(fig_b)
+                plt.close(fig_b)
+
+            with plot_right.container():
+                st.subheader("Custom Canvas Drawing Studio")
+                st.markdown(
+                    f"""
+                    <div style="background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%); border: 1px solid #334155; border-radius: 10px; padding: 1.25rem; color: white;">
+                        <div style="font-size: 0.8rem; text-transform: uppercase; color: #94A3B8; letter-spacing: 0.5px;">Active Canvas Data</div>
+                        <div style="font-size: 1.25rem; font-weight: 700; color: #38BDF8; margin: 0.25rem 0;">
+                            {len(X)} Total Points Placed
+                        </div>
+                        <div style="font-size: 0.9rem; color: #CBD5E1; margin-top: 0.5rem;">
+                            <span style="color: #3B82F6; font-weight: 700;">Class 0 (Blue Free Space):</span> {c0_count} points<br>
+                            <span style="color: #EF4444; font-weight: 700;">Class 1 (Red Obstacle):</span> {c1_count} points
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                st.markdown("<div style='margin-top: 0.75rem;'></div>", unsafe_allow_html=True)
+                st.markdown("#### How to Train on Custom Topologies:")
+                st.markdown(
+                    "1. **Select Drop Class & Brush Density** in the sidebar.\n"
+                    "2. **Click anywhere on the canvas** to drop data points (or click *Load Maze* / *Load Ring* in the sidebar).\n"
+                    "3. Ensure at least **5 points** exist for both Class 0 and Class 1.\n"
+                    "4. Click the primary **Start Training** button above to train a NumPyGrad neural network on your custom shapes!\n"
+                    "5. Once trained, switch to **Autonomous Neural Pathfinding (Tab 2)** to see the Rover navigate through your custom obstacle course!"
+                )
         else:
-            fig_b, fig_m = plot_dashboard_figures(initial_model, X, y, [0.693], [50.0])
-            plot_left.pyplot(fig_b)
-            plot_right.pyplot(fig_m)
-            plt.close(fig_b)
-            plt.close(fig_m)
+            # Initial static plot before training starts for synthetic datasets
+            initial_model = build_model(num_layers, hidden_dim, activation_name, use_batchnorm, dropout_p)
+            if HAS_PLOTLY:
+                fig_b_plotly = plot_plotly_decision_boundary(initial_model, X, y, title="Untrained Initial Decision Boundary")
+                plot_left.plotly_chart(
+                    fig_b_plotly,
+                    key="plotly_single_init",
+                    config={"displayModeBar": False, "scrollZoom": False},
+                    width="stretch",
+                )
+                _, fig_m = plot_dashboard_figures(initial_model, X, y, [0.693], [50.0])
+                plot_right.pyplot(fig_m)
+                plt.close(fig_m)
+            else:
+                fig_b, fig_m = plot_dashboard_figures(initial_model, X, y, [0.693], [50.0])
+                plot_left.pyplot(fig_b)
+                plot_right.pyplot(fig_m)
+                plt.close(fig_b)
+                plt.close(fig_m)
 
         with inference_placeholder.container():
             st.info("Configure hyperparameters in the sidebar and click **Start Training** to build the model and unlock the interactive coordinate tester.")
@@ -2077,13 +2418,19 @@ def render_model_comparison_studio():
         st.subheader("1. Shared Dataset")
         dataset_name = st.selectbox(
             "Dataset Topology",
-            ["Two Moons", "Concentric Circles", "Spirals"],
+            ["Two Moons", "Concentric Circles", "Spirals", "Custom Canvas"],
             index=2,
             key="comp_dataset_name",
         )
-        n_samples = st.slider("Sample Count", min_value=100, max_value=1000, value=500, step=50, key="comp_n_samples")
-        noise = st.slider("Noise Level", min_value=0.0, max_value=0.3, value=0.10, step=0.02, key="comp_noise")
-        seed = st.number_input("Random Seed", min_value=0, max_value=9999, value=42, step=1, key="comp_seed")
+        if dataset_name == "Custom Canvas":
+            n_samples = len(st.session_state.get("custom_points_X", []))
+            noise = 0.0
+            seed = 42
+            st.caption(f"Using Custom Canvas points (Total: {n_samples} pts). Customize layout on Single Model tab.")
+        else:
+            n_samples = st.slider("Sample Count", min_value=100, max_value=1000, value=500, step=50, key="comp_n_samples")
+            noise = st.slider("Noise Level", min_value=0.0, max_value=0.3, value=0.10, step=0.02, key="comp_noise")
+            seed = st.number_input("Random Seed", min_value=0, max_value=9999, value=42, step=1, key="comp_seed")
 
         # 2. Model A Configuration
         st.subheader("2. Model A (Shallow / Baseline)")
@@ -2161,6 +2508,17 @@ def render_model_comparison_studio():
     inference_placeholder = st.empty()
 
     # ---------------- Dual Training Loop ----------------
+    if start_training:
+        if dataset_name == "Custom Canvas":
+            c0_count = int(np.sum(y == 0)) if len(y) > 0 else 0
+            c1_count = int(np.sum(y == 1)) if len(y) > 0 else 0
+            if c0_count < 5 or c1_count < 5:
+                status_placeholder.warning(
+                    f"Insufficient custom points: You currently have {c0_count} Class 0 (Blue) and {c1_count} Class 1 (Red) points. "
+                    "Please configure at least 5 points for each class in the Single Model tab before comparison training."
+                )
+                start_training = False
+
     if start_training:
         model_a = build_model(num_layers_a, hidden_dim_a, act_a, bn_a, dropout_a)
         model_b = build_model(num_layers_b, hidden_dim_b, act_b, bn_b, dropout_b)
@@ -2574,41 +2932,71 @@ def render_model_comparison_studio():
                         st.info("Train the model to visualize post-backpropagation gradient flow across layers.")
 
     elif not start_training:
-        init_a = build_model(num_layers_a, hidden_dim_a, act_a, bn_a, dropout_a)
-        init_b = build_model(num_layers_b, hidden_dim_b, act_b, bn_b, dropout_b)
-        if HAS_PLOTLY:
-            fig_a_plotly = plot_plotly_decision_boundary(init_a, X, y, title="Model A (Untrained Baseline)")
-            fig_b_plotly = plot_plotly_decision_boundary(init_b, X, y, title="Model B (Untrained Baseline)")
-            plot_a_holder.plotly_chart(
-                fig_a_plotly,
-                key="plotly_comp_init_a",
-                config={"displayModeBar": False, "scrollZoom": False},
-                width="stretch",
-            )
-            plot_b_holder.plotly_chart(
-                fig_b_plotly,
-                key="plotly_comp_init_b",
-                config={"displayModeBar": False, "scrollZoom": False},
-                width="stretch",
-            )
-            _, _, fig_c = plot_comparison_dashboard_figures(
-                init_a, init_b, X, y, [0.693], [50.0], [0.693], [50.0],
-                title_a="Model A", title_b="Model B",
-            )
-            curves_placeholder.pyplot(fig_c)
-            plt.close(fig_c)
+        if dataset_name == "Custom Canvas":
+            c0_count = int(np.sum(y == 0)) if len(y) > 0 else 0
+            c1_count = int(np.sum(y == 1)) if len(y) > 0 else 0
+            if HAS_PLOTLY:
+                fig_a_plotly = plot_plotly_custom_canvas(
+                    X, y, title=f"Model A (Custom Canvas Untrained) - Total: {len(X)} pts"
+                )
+                fig_b_plotly = plot_plotly_custom_canvas(
+                    X, y, title=f"Model B (Custom Canvas Untrained) - Total: {len(X)} pts"
+                )
+                plot_a_holder.plotly_chart(
+                    fig_a_plotly,
+                    key="plotly_comp_init_a",
+                    config={"displayModeBar": False, "scrollZoom": False},
+                    width="stretch",
+                )
+                plot_b_holder.plotly_chart(
+                    fig_b_plotly,
+                    key="plotly_comp_init_b",
+                    config={"displayModeBar": False, "scrollZoom": False},
+                    width="stretch",
+                )
+            else:
+                fig_a, _ = plot_dashboard_figures(None, X, y, [0.693], [50.0])
+                fig_b, _ = plot_dashboard_figures(None, X, y, [0.693], [50.0])
+                plot_a_holder.pyplot(fig_a)
+                plot_b_holder.pyplot(fig_b)
+                plt.close(fig_a)
+                plt.close(fig_b)
         else:
-            fig_a, fig_b, fig_c = plot_comparison_dashboard_figures(
-                init_a, init_b, X, y, [0.693], [50.0], [0.693], [50.0],
-                title_a=f"Model A (Untrained Baseline)",
-                title_b=f"Model B (Untrained Baseline)",
-            )
-            plot_a_holder.pyplot(fig_a)
-            plot_b_holder.pyplot(fig_b)
-            curves_placeholder.pyplot(fig_c)
-            plt.close(fig_a)
-            plt.close(fig_b)
-            plt.close(fig_c)
+            init_a = build_model(num_layers_a, hidden_dim_a, act_a, bn_a, dropout_a)
+            init_b = build_model(num_layers_b, hidden_dim_b, act_b, bn_b, dropout_b)
+            if HAS_PLOTLY:
+                fig_a_plotly = plot_plotly_decision_boundary(init_a, X, y, title="Model A (Untrained Baseline)")
+                fig_b_plotly = plot_plotly_decision_boundary(init_b, X, y, title="Model B (Untrained Baseline)")
+                plot_a_holder.plotly_chart(
+                    fig_a_plotly,
+                    key="plotly_comp_init_a",
+                    config={"displayModeBar": False, "scrollZoom": False},
+                    width="stretch",
+                )
+                plot_b_holder.plotly_chart(
+                    fig_b_plotly,
+                    key="plotly_comp_init_b",
+                    config={"displayModeBar": False, "scrollZoom": False},
+                    width="stretch",
+                )
+                _, _, fig_c = plot_comparison_dashboard_figures(
+                    init_a, init_b, X, y, [0.693], [50.0], [0.693], [50.0],
+                    title_a="Model A", title_b="Model B",
+                )
+                curves_placeholder.pyplot(fig_c)
+                plt.close(fig_c)
+            else:
+                fig_a, fig_b, fig_c = plot_comparison_dashboard_figures(
+                    init_a, init_b, X, y, [0.693], [50.0], [0.693], [50.0],
+                    title_a=f"Model A (Untrained Baseline)",
+                    title_b=f"Model B (Untrained Baseline)",
+                )
+                plot_a_holder.pyplot(fig_a)
+                plot_b_holder.pyplot(fig_b)
+                curves_placeholder.pyplot(fig_c)
+                plt.close(fig_a)
+                plt.close(fig_b)
+                plt.close(fig_c)
 
         with inference_placeholder.container():
             st.info("Configure Model A and Model B in the sidebar and click **Train Both Models (A & B)** to start the comparative experiment.")
