@@ -39,21 +39,57 @@ st.set_page_config(
 st.markdown(
     """
     <style>
+    /* Hide the top header bar (Deploy button, running indicators, menu) */
+    header[data-testid="stHeader"] {
+        visibility: hidden !important;
+        height: 0% !important;
+        position: fixed !important;
+    }
+
+    /* Minimize canvas padding to maximize vertical viewport */
+    .block-container {
+        padding-top: 1rem !important;
+        padding-bottom: 1rem !important;
+        padding-left: 2rem !important;
+        padding-right: 2rem !important;
+    }
+
+    /* Compact sidebar padding */
+    section[data-testid="stSidebar"] .block-container {
+        padding-top: 1.5rem !important;
+        padding-bottom: 1rem !important;
+    }
+
+    /* Tighten typography margins */
     .main-header {
-        font-size: 2.2rem;
+        font-size: 1.85rem;
         font-weight: 700;
-        margin-bottom: 0.2rem;
+        margin-top: 0rem !important;
+        margin-bottom: 0.1rem !important;
+        line-height: 1.2;
     }
     .sub-header {
-        font-size: 1.05rem;
+        font-size: 0.95rem;
         color: #6c757d;
-        margin-bottom: 1.5rem;
+        margin-top: 0rem !important;
+        margin-bottom: 0.75rem !important;
     }
     .metric-card {
         background-color: #f8f9fa;
         border-radius: 8px;
-        padding: 12px;
+        padding: 8px 12px;
         border: 1px solid #e9ecef;
+    }
+
+    /* Reduce vertical gaps between elements and headers */
+    h1, h2, h3, h4 {
+        margin-top: 0.2rem !important;
+        margin-bottom: 0.3rem !important;
+        padding-top: 0rem !important;
+        padding-bottom: 0rem !important;
+    }
+    div[data-testid="stVerticalBlock"] > div {
+        gap: 0.5rem !important;
     }
     </style>
     """,
