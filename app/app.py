@@ -227,29 +227,10 @@ st.markdown(
         color: #FFFFFF !important;
     }
 
-    /* Canvas Toolbar: Hide Download / Save icon completely */
-    div[data-testid="stDrawableCanvas"] button:first-child,
-    div[data-testid="stDrawableCanvas"] .button-download,
-    div[data-testid="stDrawableCanvas"] button[title*="Download"],
-    div[data-testid="stDrawableCanvas"] button[title*="Save"],
-    div[data-testid="stDrawableCanvas"] button[aria-label*="download"],
-    div[data-testid="stDrawableCanvas"] button[aria-label*="Save"] {
+    /* Hide the default low-contrast canvas toolbar */
+    iframe[title="streamlit_drawable_canvas.drawable_canvas"] + div,
+    div[data-testid="stDrawableCanvas"] div:has(> button) {
         display: none !important;
-    }
-
-    /* Style Undo, Redo, Trash icons to be bright white by default */
-    div[data-testid="stDrawableCanvas"] button {
-        background-color: transparent !important;
-        border: none !important;
-        opacity: 0.9 !important;
-        margin-right: 8px !important;
-    }
-
-    div[data-testid="stDrawableCanvas"] button svg,
-    div[data-testid="stDrawableCanvas"] button svg path {
-        fill: #FFFFFF !important;
-        stroke: #FFFFFF !important;
-        color: #FFFFFF !important;
     }
     </style>
     """,
@@ -779,9 +760,18 @@ def render_mnist_inference_tab():
             height=280,
             width=280,
             drawing_mode="freedraw",
-            display_toolbar=True,
-            key="mnist_digit_canvas",
+            display_toolbar=False,
+            key=f"mnist_canvas_{st.session_state.get('canvas_key', 0)}",
         )
+
+        col_clear, col_classify = st.columns([1, 1])
+        with col_clear:
+            if st.button("🗑️ Clear Canvas", use_container_width=True):
+                # Increment key to reset canvas state cleanly
+                st.session_state["canvas_key"] = st.session_state.get("canvas_key", 0) + 1
+                st.rerun()
+        with col_classify:
+            classify_btn = st.button("🔍 Classify Drawing", type="primary", use_container_width=True)
 
         # Preprocess and show thumbnail
         processed = preprocess_canvas_image(canvas_result)
