@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Dependencies](https://img.shields.io/badge/Dependencies-Pure%20NumPy-brightgreen.svg)](#)
-[![Tests: 141/141 Passed](https://img.shields.io/badge/Tests-141%2F141%20Passed-success.svg)](#)
+[![Tests: 142/142 Passed](https://img.shields.io/badge/Tests-142%2F142%20Passed-success.svg)](#)
 
 A transparent, educational deep learning library and dynamic tensor automatic differentiation engine built from scratch using **pure Python and NumPy**—with **zero external deep learning framework dependencies** (no PyTorch, JAX, TensorFlow, or Keras).
 

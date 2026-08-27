@@ -17,16 +17,17 @@ def simulate_rover_path(
     model: nn.Module,
     start_pos: Tuple[float, float] = (-1.8, 1.2),
     target_pos: Tuple[float, float] = (1.8, -1.2),
-    max_steps: int = 50,
+    max_steps: int = 80,
     step_size: float = 0.12,
     num_rays: int = 5,
     ray_len: float = 0.35,
-    avoidance_weight: float = 2.5,
+    avoidance_weight: float = 2.0,
+    tangent_weight: float = 1.5,
     hazard_threshold: float = 0.55,
 ) -> Dict[str, Any]:
     """
     Simulates an autonomous rover navigating from `start_pos` to `target_pos`
-    using forward ray-casting against a trained neural obstacle field.
+    using forward ray-casting and tangential wall-following against a trained neural obstacle field.
 
     Parameters
     ----------
@@ -47,6 +48,8 @@ def simulate_rover_path(
         Physical lookahead reach of each sensor ray.
     avoidance_weight : float
         Strength of repulsive obstacle force relative to attractive goal force.
+    tangent_weight : float
+        Strength of tangential wall-following force to escape local potential minima.
     hazard_threshold : float
         Class 1 probability threshold indicating an active obstacle collision.
 
@@ -141,8 +144,25 @@ def simulate_rover_path(
 
         ray_history.append(step_rays)
 
-        # 5. Combine attractive & repulsive potential vectors
-        v_total = v_goal + avoidance_weight * v_avoid
+        # 5. Combine attractive, repulsive, and tangential wall-following potential vectors
+        v_avoid_norm = float(np.linalg.norm(v_avoid))
+        if v_avoid_norm > 0.1:
+            # Perpendicular tangent vector [-v_avoid_y, v_avoid_x]
+            v_tangent = np.array([-v_avoid[1], v_avoid[0]], dtype=np.float32)
+            v_tan_norm = float(np.linalg.norm(v_tangent))
+            if v_tan_norm > 1e-9:
+                u_tangent = v_tangent / v_tan_norm
+            else:
+                u_tangent = np.zeros(2, dtype=np.float32)
+
+            # Choose tangent direction that aligns forward with v_goal
+            if float(np.dot(u_tangent, v_goal)) < 0.0:
+                u_tangent = -u_tangent
+
+            v_total = v_goal + avoidance_weight * v_avoid + tangent_weight * u_tangent
+        else:
+            v_total = v_goal
+
         v_norm = float(np.linalg.norm(v_total))
         if v_norm > 1e-6:
             u_step = v_total / v_norm

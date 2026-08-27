@@ -2660,42 +2660,43 @@ def render_neural_pathfinding_tab():
         preset_cols = st.columns(2)
         with preset_cols[0]:
             if st.button("Moon Gap", width="stretch", key="preset_moon"):
-                st.session_state["rover_start_x1"] = -1.8
-                st.session_state["rover_start_x2"] = 1.2
-                st.session_state["rover_target_x1"] = 1.8
-                st.session_state["rover_target_x2"] = -1.2
+                st.session_state["rover_start_x1"] = -1.6
+                st.session_state["rover_start_x2"] = 1.0
+                st.session_state["rover_target_x1"] = 1.6
+                st.session_state["rover_target_x2"] = -0.8
         with preset_cols[1]:
             if st.button("Spiral Arms", width="stretch", key="preset_spiral"):
-                st.session_state["rover_start_x1"] = -2.0
-                st.session_state["rover_start_x2"] = -2.0
-                st.session_state["rover_target_x1"] = 2.0
-                st.session_state["rover_target_x2"] = 2.0
+                st.session_state["rover_start_x1"] = -1.8
+                st.session_state["rover_start_x2"] = -1.8
+                st.session_state["rover_target_x1"] = 1.8
+                st.session_state["rover_target_x2"] = 1.8
 
         preset_cols_2 = st.columns(2)
         with preset_cols_2[0]:
             if st.button("Circle Bypass", width="stretch", key="preset_circle"):
-                st.session_state["rover_start_x1"] = -2.2
+                st.session_state["rover_start_x1"] = -2.0
                 st.session_state["rover_start_x2"] = 0.0
-                st.session_state["rover_target_x1"] = 2.2
+                st.session_state["rover_target_x1"] = 2.0
                 st.session_state["rover_target_x2"] = 0.0
         with preset_cols_2[1]:
             if st.button("Direct Diagonal", width="stretch", key="preset_diag"):
-                st.session_state["rover_start_x1"] = -2.0
-                st.session_state["rover_start_x2"] = 2.0
-                st.session_state["rover_target_x1"] = 2.0
-                st.session_state["rover_target_x2"] = -2.0
+                st.session_state["rover_start_x1"] = -1.8
+                st.session_state["rover_start_x2"] = 1.8
+                st.session_state["rover_target_x1"] = 1.8
+                st.session_state["rover_target_x2"] = -1.8
 
-        start_x1 = st.slider("Start Position x1", -2.4, 2.4, st.session_state.get("rover_start_x1", -1.8), 0.1, key="rover_start_x1")
-        start_x2 = st.slider("Start Position x2", -2.4, 2.4, st.session_state.get("rover_start_x2", 1.2), 0.1, key="rover_start_x2")
-        target_x1 = st.slider("Target Goal x1", -2.4, 2.4, st.session_state.get("rover_target_x1", 1.8), 0.1, key="rover_target_x1")
-        target_x2 = st.slider("Target Goal x2", -2.4, 2.4, st.session_state.get("rover_target_x2", -1.2), 0.1, key="rover_target_x2")
+        start_x1 = st.slider("Start Position x1", -2.4, 2.4, st.session_state.get("rover_start_x1", -1.6), 0.1, key="rover_start_x1")
+        start_x2 = st.slider("Start Position x2", -2.4, 2.4, st.session_state.get("rover_start_x2", 1.0), 0.1, key="rover_start_x2")
+        target_x1 = st.slider("Target Goal x1", -2.4, 2.4, st.session_state.get("rover_target_x1", 1.6), 0.1, key="rover_target_x1")
+        target_x2 = st.slider("Target Goal x2", -2.4, 2.4, st.session_state.get("rover_target_x2", -0.8), 0.1, key="rover_target_x2")
 
         with st.expander("Physical Simulation Tuning", expanded=True):
             step_size = st.slider("Step Size (Speed)", 0.04, 0.25, 0.12, 0.01, key="rover_step_size")
             ray_len = st.slider("Sensor Lookahead", 0.15, 0.70, 0.35, 0.05, key="rover_ray_len")
-            avoidance_weight = st.slider("Repulsion Weight", 0.5, 6.0, 2.5, 0.25, key="rover_avoid_wt")
+            avoidance_weight = st.slider("Repulsion Weight", 0.5, 6.0, 2.0, 0.25, key="rover_avoid_wt")
+            tangent_weight = st.slider("Tangent Wall-Following Weight", 0.0, 4.0, 1.5, 0.25, key="rover_tangent_wt")
             num_rays = st.slider("Sensor Ray Count", 3, 9, 5, 2, key="rover_num_rays")
-            max_steps = st.slider("Max Steps", 15, 100, 50, 5, key="rover_max_steps")
+            max_steps = st.slider("Max Steps", 20, 150, 80, 5, key="rover_max_steps")
             show_sensor_rays = st.checkbox("Show Sensor Radar Rays", value=True, key="rover_show_rays")
 
         btn_label = "Launch Rover Simulation" if nav_mode == "Single Model Mission" else "Start Dual-Model Race"
@@ -2716,6 +2717,7 @@ def render_neural_pathfinding_tab():
                 num_rays=num_rays,
                 ray_len=ray_len,
                 avoidance_weight=avoidance_weight,
+                tangent_weight=tangent_weight,
             )
             st.session_state["rover_sim"] = sim_result
         else:
@@ -2866,6 +2868,7 @@ def render_neural_pathfinding_tab():
                 num_rays=num_rays,
                 ray_len=ray_len,
                 avoidance_weight=avoidance_weight,
+                tangent_weight=tangent_weight,
             )
             sim_b = simulate_rover_path(
                 model=model_b,
@@ -2876,6 +2879,7 @@ def render_neural_pathfinding_tab():
                 num_rays=num_rays,
                 ray_len=ray_len,
                 avoidance_weight=avoidance_weight,
+                tangent_weight=tangent_weight,
             )
             st.session_state["rover_sim_a"] = sim_a
             st.session_state["rover_sim_b"] = sim_b

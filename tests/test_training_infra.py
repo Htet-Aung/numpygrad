@@ -809,4 +809,29 @@ def test_dual_model_navigation_race():
         assert fig_a is not None and fig_b is not None
 
 
+def test_tangential_steering_escape_local_minima():
+    from app.app import build_model
+    from numpygrad.utils.pathfinding import simulate_rover_path
+
+    model = build_model(num_layers=2, hidden_dim=8, activation_name="Tanh")
+    sim_res = simulate_rover_path(
+        model=model,
+        start_pos=(-1.6, 1.0),
+        target_pos=(1.6, -0.8),
+        max_steps=40,
+        step_size=0.12,
+        num_rays=5,
+        ray_len=0.35,
+        avoidance_weight=2.0,
+        tangent_weight=1.5,
+    )
+
+    assert "trajectory" in sim_res
+    assert len(sim_res["trajectory"]) > 2
+    # Ensure rover moves and doesn't get stuck in a single stationary point
+    start_pt = np.array(sim_res["trajectory"][0])
+    end_pt = np.array(sim_res["trajectory"][-1])
+    assert float(np.linalg.norm(end_pt - start_pt)) > 0.3
+
+
 
