@@ -352,3 +352,12 @@ def test_deep_neural_network_dag_gradcheck():
         return loss
 
     assert gradcheck(model_loss, [w1, b1, w2, b2], eps=1e-5, atol=1e-4, rtol=1e-3)
+
+
+def test_getitem_slice_gradcheck():
+    def f(x):
+        return (x[1:3, :, 0:2] ** 2.0).sum()
+
+    x = Tensor(np.random.randn(4, 3, 4).astype(np.float32), requires_grad=True)
+    assert gradcheck(f, [x])
+

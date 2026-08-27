@@ -5,7 +5,7 @@ Loss functions: MSELoss, CrossEntropyLoss, and BCEWithLogitsLoss.
 from __future__ import annotations
 from typing import Optional, Union
 import numpy as np
-from numpygrad.core.tensor import Tensor, _unbroadcast
+from numpygrad.core.tensor import Tensor, _unbroadcast, is_grad_enabled
 from numpygrad.nn.module import Module
 
 
@@ -100,9 +100,20 @@ class CrossEntropyLoss(Module):
         else:
             loss_data = loss_per_sample
 
+        req_grad = is_grad_enabled() and logits.requires_grad
+
+        if not req_grad:
+            return Tensor(
+                loss_data,
+                requires_grad=False,
+                _prev=(),
+                _op="cross_entropy",
+                dtype=logits.dtype,
+            )
+
         out = Tensor(
             loss_data,
-            requires_grad=logits.requires_grad,
+            requires_grad=True,
             _prev=(logits,),
             _op="cross_entropy",
             dtype=logits.dtype,
@@ -163,9 +174,20 @@ class BCEWithLogitsLoss(Module):
         else:
             loss_data = loss_val
 
+        req_grad = is_grad_enabled() and (logits.requires_grad or target.requires_grad)
+
+        if not req_grad:
+            return Tensor(
+                loss_data,
+                requires_grad=False,
+                _prev=(),
+                _op="bce_with_logits",
+                dtype=logits.dtype,
+            )
+
         out = Tensor(
             loss_data,
-            requires_grad=logits.requires_grad,
+            requires_grad=True,
             _prev=(logits, target),
             _op="bce_with_logits",
             dtype=logits.dtype,
@@ -199,3 +221,4 @@ class BCEWithLogitsLoss(Module):
 
     def __repr__(self) -> str:
         return f"BCEWithLogitsLoss(reduction='{self.reduction}')"
+

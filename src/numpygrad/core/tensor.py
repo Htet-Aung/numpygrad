@@ -6,8 +6,97 @@ directed acyclic graphs (DAGs) using pure NumPy.
 """
 
 from __future__ import annotations
-from typing import Optional, Set, Tuple, Union, Sequence, Callable
+from typing import Optional, Set, Tuple, Union, Sequence, Callable, Any
+import functools
 import numpy as np
+
+
+_grad_enabled: bool = True
+
+
+def is_grad_enabled() -> bool:
+    """Returns True if autograd gradient tracking is currently enabled, False otherwise."""
+    return _grad_enabled
+
+
+def set_grad_enabled(mode: bool) -> None:
+    """Enables or disables autograd gradient tracking globally."""
+    global _grad_enabled
+    _grad_enabled = bool(mode)
+
+
+class no_grad:
+    """
+    Context-manager and function decorator that disables gradient calculation.
+
+    Disabling gradient calculation is useful for inference, when you are sure
+    that you will not call `Tensor.backward()`. It reduces memory consumption
+    and computational overhead by preventing dynamic DAG edge construction and
+    gradient graph retention.
+
+    Examples
+    --------
+    >>> x = Tensor([1.0, 2.0], requires_grad=True)
+    >>> with no_grad():
+    ...     y = x * 2.0
+    >>> y.requires_grad
+    False
+
+    >>> @no_grad()
+    ... def predict(model, x):
+    ...     return model(x)
+    """
+
+    def __init__(self) -> None:
+        self.prev: bool = True
+
+    def __enter__(self) -> no_grad:
+        global _grad_enabled
+        self.prev = _grad_enabled
+        _grad_enabled = False
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        global _grad_enabled
+        _grad_enabled = self.prev
+
+    def __call__(self, func: Callable) -> Callable:
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            with self:
+                return func(*args, **kwargs)
+
+        return wrapper
+
+
+class enable_grad:
+    """
+    Context-manager and function decorator that enables gradient calculation.
+
+    Enables gradient tracking inside contexts where it was previously disabled
+    via `no_grad()`.
+    """
+
+    def __init__(self) -> None:
+        self.prev: bool = True
+
+    def __enter__(self) -> enable_grad:
+        global _grad_enabled
+        self.prev = _grad_enabled
+        _grad_enabled = True
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        global _grad_enabled
+        _grad_enabled = self.prev
+
+    def __call__(self, func: Callable) -> Callable:
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            with self:
+                return func(*args, **kwargs)
+
+        return wrapper
 
 
 def _unbroadcast(grad: np.ndarray, target_shape: Tuple[int, ...]) -> np.ndarray:
@@ -128,6 +217,45 @@ class Tensor:
         grad_info = f", grad={self.grad.shape}" if self.grad is not None else ""
         return f"Tensor({self.data}, requires_grad={self.requires_grad}{grad_info})"
 
+    def __len__(self) -> int:
+        """Returns the size of the first dimension of the tensor."""
+        if self.ndim == 0:
+            raise TypeError("len() of unsized object")
+        return len(self.data)
+
+    def __getitem__(self, item: Any) -> Tensor:
+        """Extracts a slice or sub-tensor along dimensions."""
+        indexed_data = self.data[item]
+        req_grad = is_grad_enabled() and self.requires_grad
+
+        if not req_grad:
+            return Tensor(
+                indexed_data,
+                requires_grad=False,
+                _prev=(),
+                _op="getitem",
+                dtype=self.dtype,
+            )
+
+        out = Tensor(
+            indexed_data,
+            requires_grad=True,
+            _prev=(self,),
+            _op="getitem",
+            dtype=self.dtype,
+        )
+
+        def _backward() -> None:
+            if out.grad is None:
+                return
+            if self.requires_grad:
+                gx = np.zeros_like(self.data, dtype=self.dtype)
+                np.add.at(gx, item, out.grad)
+                self.grad = gx if self.grad is None else self.grad + gx
+
+        out._backward = _backward
+        return out
+
     def __hash__(self) -> int:
         return id(self)
 
@@ -186,9 +314,20 @@ class Tensor:
         """
         other = other if isinstance(other, Tensor) else Tensor(other, requires_grad=False, dtype=self.dtype)
         res_dtype = np.result_type(self.dtype, other.dtype)
+        req_grad = is_grad_enabled() and (self.requires_grad or other.requires_grad)
+
+        if not req_grad:
+            return Tensor(
+                self.data + other.data,
+                requires_grad=False,
+                _prev=(),
+                _op="+",
+                dtype=res_dtype,
+            )
+
         out = Tensor(
             self.data + other.data,
-            requires_grad=(self.requires_grad or other.requires_grad),
+            requires_grad=True,
             _prev=(self, other),
             _op="+",
             dtype=res_dtype,
@@ -215,9 +354,20 @@ class Tensor:
         Unary negation: z = -x
         Analytical Gradient: dz/dx = -1
         """
+        req_grad = is_grad_enabled() and self.requires_grad
+
+        if not req_grad:
+            return Tensor(
+                -self.data,
+                requires_grad=False,
+                _prev=(),
+                _op="neg",
+                dtype=self.dtype,
+            )
+
         out = Tensor(
             -self.data,
-            requires_grad=self.requires_grad,
+            requires_grad=True,
             _prev=(self,),
             _op="neg",
             dtype=self.dtype,
@@ -240,9 +390,20 @@ class Tensor:
         """
         other = other if isinstance(other, Tensor) else Tensor(other, requires_grad=False, dtype=self.dtype)
         res_dtype = np.result_type(self.dtype, other.dtype)
+        req_grad = is_grad_enabled() and (self.requires_grad or other.requires_grad)
+
+        if not req_grad:
+            return Tensor(
+                self.data - other.data,
+                requires_grad=False,
+                _prev=(),
+                _op="-",
+                dtype=res_dtype,
+            )
+
         out = Tensor(
             self.data - other.data,
-            requires_grad=(self.requires_grad or other.requires_grad),
+            requires_grad=True,
             _prev=(self, other),
             _op="-",
             dtype=res_dtype,
@@ -272,9 +433,20 @@ class Tensor:
         """
         other = other if isinstance(other, Tensor) else Tensor(other, requires_grad=False, dtype=self.dtype)
         res_dtype = np.result_type(self.dtype, other.dtype)
+        req_grad = is_grad_enabled() and (self.requires_grad or other.requires_grad)
+
+        if not req_grad:
+            return Tensor(
+                self.data * other.data,
+                requires_grad=False,
+                _prev=(),
+                _op="*",
+                dtype=res_dtype,
+            )
+
         out = Tensor(
             self.data * other.data,
-            requires_grad=(self.requires_grad or other.requires_grad),
+            requires_grad=True,
             _prev=(self, other),
             _op="*",
             dtype=res_dtype,
@@ -303,9 +475,20 @@ class Tensor:
         """
         other = other if isinstance(other, Tensor) else Tensor(other, requires_grad=False, dtype=self.dtype)
         res_dtype = np.result_type(self.dtype, other.dtype)
+        req_grad = is_grad_enabled() and (self.requires_grad or other.requires_grad)
+
+        if not req_grad:
+            return Tensor(
+                self.data / other.data,
+                requires_grad=False,
+                _prev=(),
+                _op="/",
+                dtype=res_dtype,
+            )
+
         out = Tensor(
             self.data / other.data,
-            requires_grad=(self.requires_grad or other.requires_grad),
+            requires_grad=True,
             _prev=(self, other),
             _op="/",
             dtype=res_dtype,
@@ -337,9 +520,20 @@ class Tensor:
         """
         other = other if isinstance(other, Tensor) else Tensor(other, requires_grad=False, dtype=self.dtype)
         res_dtype = np.result_type(self.dtype, other.dtype)
+        req_grad = is_grad_enabled() and (self.requires_grad or other.requires_grad)
+
+        if not req_grad:
+            return Tensor(
+                self.data @ other.data,
+                requires_grad=False,
+                _prev=(),
+                _op="@",
+                dtype=res_dtype,
+            )
+
         out = Tensor(
             self.data @ other.data,
-            requires_grad=(self.requires_grad or other.requires_grad),
+            requires_grad=True,
             _prev=(self, other),
             _op="@",
             dtype=res_dtype,
@@ -374,9 +568,20 @@ class Tensor:
         """
         if isinstance(exponent, Tensor):
             res_dtype = np.result_type(self.dtype, exponent.dtype)
+            req_grad = is_grad_enabled() and (self.requires_grad or exponent.requires_grad)
+
+            if not req_grad:
+                return Tensor(
+                    self.data ** exponent.data,
+                    requires_grad=False,
+                    _prev=(),
+                    _op="**",
+                    dtype=res_dtype,
+                )
+
             out = Tensor(
                 self.data ** exponent.data,
-                requires_grad=(self.requires_grad or exponent.requires_grad),
+                requires_grad=True,
                 _prev=(self, exponent),
                 _op="**",
                 dtype=res_dtype,
@@ -399,9 +604,20 @@ class Tensor:
             return out
         else:
             p = float(exponent)
+            req_grad = is_grad_enabled() and self.requires_grad
+
+            if not req_grad:
+                return Tensor(
+                    self.data ** p,
+                    requires_grad=False,
+                    _prev=(),
+                    _op=f"**{p}",
+                    dtype=self.dtype,
+                )
+
             out = Tensor(
                 self.data ** p,
-                requires_grad=self.requires_grad,
+                requires_grad=True,
                 _prev=(self,),
                 _op=f"**{p}",
                 dtype=self.dtype,
@@ -427,9 +643,20 @@ class Tensor:
         Rectified Linear Unit: z = max(0, x)
         Analytical Derivative: dz/dx = 1 if x > 0 else 0
         """
+        req_grad = is_grad_enabled() and self.requires_grad
+
+        if not req_grad:
+            return Tensor(
+                np.maximum(0.0, self.data),
+                requires_grad=False,
+                _prev=(),
+                _op="relu",
+                dtype=self.dtype,
+            )
+
         out = Tensor(
             np.maximum(0.0, self.data),
-            requires_grad=self.requires_grad,
+            requires_grad=True,
             _prev=(self,),
             _op="relu",
             dtype=self.dtype,
@@ -458,9 +685,20 @@ class Tensor:
         exp_x = np.exp(self.data[neg_mask])
         sig[neg_mask] = exp_x / (1.0 + exp_x)
 
+        req_grad = is_grad_enabled() and self.requires_grad
+
+        if not req_grad:
+            return Tensor(
+                sig,
+                requires_grad=False,
+                _prev=(),
+                _op="sigmoid",
+                dtype=self.dtype,
+            )
+
         out = Tensor(
             sig,
-            requires_grad=self.requires_grad,
+            requires_grad=True,
             _prev=(self,),
             _op="sigmoid",
             dtype=self.dtype,
@@ -482,9 +720,20 @@ class Tensor:
         Analytical Derivative: dz/dx = 1 - tanh(x)^2
         """
         t_data = np.tanh(self.data).astype(self.dtype)
+        req_grad = is_grad_enabled() and self.requires_grad
+
+        if not req_grad:
+            return Tensor(
+                t_data,
+                requires_grad=False,
+                _prev=(),
+                _op="tanh",
+                dtype=self.dtype,
+            )
+
         out = Tensor(
             t_data,
-            requires_grad=self.requires_grad,
+            requires_grad=True,
             _prev=(self,),
             _op="tanh",
             dtype=self.dtype,
@@ -514,9 +763,20 @@ class Tensor:
         Analytical Gradient: Broadcasts incoming gradient along summed axes.
         """
         s_data = np.sum(self.data, axis=axis, keepdims=keepdims).astype(self.dtype)
+        req_grad = is_grad_enabled() and self.requires_grad
+
+        if not req_grad:
+            return Tensor(
+                s_data,
+                requires_grad=False,
+                _prev=(),
+                _op="sum",
+                dtype=self.dtype,
+            )
+
         out = Tensor(
             s_data,
-            requires_grad=self.requires_grad,
+            requires_grad=True,
             _prev=(self,),
             _op="sum",
             dtype=self.dtype,
@@ -552,9 +812,20 @@ class Tensor:
         Analytical Gradient: (1 / N) * Broadcast(incoming gradient).
         """
         m_data = np.mean(self.data, axis=axis, keepdims=keepdims).astype(self.dtype)
+        req_grad = is_grad_enabled() and self.requires_grad
+
+        if not req_grad:
+            return Tensor(
+                m_data,
+                requires_grad=False,
+                _prev=(),
+                _op="mean",
+                dtype=self.dtype,
+            )
+
         out = Tensor(
             m_data,
-            requires_grad=self.requires_grad,
+            requires_grad=True,
             _prev=(self,),
             _op="mean",
             dtype=self.dtype,
@@ -593,9 +864,20 @@ class Tensor:
             target_shape = tuple(shape)  # type: ignore
 
         r_data = self.data.reshape(target_shape).astype(self.dtype)
+        req_grad = is_grad_enabled() and self.requires_grad
+
+        if not req_grad:
+            return Tensor(
+                r_data,
+                requires_grad=False,
+                _prev=(),
+                _op="reshape",
+                dtype=self.dtype,
+            )
+
         out = Tensor(
             r_data,
-            requires_grad=self.requires_grad,
+            requires_grad=True,
             _prev=(self,),
             _op="reshape",
             dtype=self.dtype,
@@ -623,9 +905,20 @@ class Tensor:
             order = tuple(axes)  # type: ignore
             t_data = self.data.transpose(order).astype(self.dtype)
 
+        req_grad = is_grad_enabled() and self.requires_grad
+
+        if not req_grad:
+            return Tensor(
+                t_data,
+                requires_grad=False,
+                _prev=(),
+                _op="transpose",
+                dtype=self.dtype,
+            )
+
         out = Tensor(
             t_data,
-            requires_grad=self.requires_grad,
+            requires_grad=True,
             _prev=(self,),
             _op="transpose",
             dtype=self.dtype,
@@ -645,3 +938,4 @@ class Tensor:
 
         out._backward = _backward
         return out
+

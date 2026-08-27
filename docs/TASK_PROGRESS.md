@@ -1,6 +1,6 @@
 # Task Progress Tracker: NumPyGrad
 
-This document tracks phase-by-phase development progress for the **NumPyGrad** pure NumPy autograd & deep learning library.
+This document tracks development progress across the milestones for evolving **NumPyGrad** into a cohesive, modular deep learning and automatic differentiation framework.
 
 **Status Markers**:
 - `[TODO]` - Not started
@@ -9,97 +9,85 @@ This document tracks phase-by-phase development progress for the **NumPyGrad** p
 
 ---
 
-## Phase Breakdown
+## Milestone Roadmap Overview
 
-| Phase | Description | Status |
+| Milestone | Description | Status |
 |---|---|---|
-| **Phase 1** | Core Autograd Engine & DAG Foundations | `[DONE]` |
-| **Phase 2** | Core Autograd & Dynamic Tensor Engine | `[DONE]` |
-| **Phase 3** | Numerical Gradient Checking (`gradcheck`) | `[DONE]` |
-| **Phase 4** | Neural Network Foundation & Layers | `[DONE]` |
-| **Phase 5** | Numerically Stable Loss Functions | `[DONE]` |
-| **Phase 6** | First-Order Optimizers (`SGD`, `AdamW`) | `[DONE]` |
-| **Phase 7** | DAG Visualization & Diagnostic Utilities | `[DONE]` |
-| **Phase 8** | Integration Tests & End-to-End Deep Learning Demos | `[DONE]` |
-| **Phase 9** | Interactive Streamlit Visualizer (`app/app.py`) | `[DONE]` |
-| **Phase 10** | Documentation, CPU Benchmarking & Visual Showcase | `[DONE]` |
+| **Milestone 1** | Training Infrastructure (`Dataset`, `DataLoader`, train/eval modes, `no_grad`) | `[DONE]` |
+| **Milestone 2** | Advanced Tensor Operations & Math (Slicing, Advanced Indexing, Clamping) | `[TODO]` |
+| **Milestone 3** | Additional Neural Network Layers & Containers (`Conv2D`, `MaxPool2d`, `Flatten`, `LayerNorm`) | `[TODO]` |
+| **Milestone 4** | Advanced Loss Functions & Evaluation Metrics (`NLLLoss`, `SmoothL1Loss`, Accuracy, F1) | `[TODO]` |
+| **Milestone 5** | Learning Rate Schedulers (`StepLR`, `CosineAnnealingLR`, `ExponentialLR`) | `[TODO]` |
+| **Milestone 6** | Model Serialization & State Management (`state_dict`, `load_state_dict`, Checkpointing) | `[TODO]` |
+| **Milestone 7** | Advanced First-Order Optimizers (`RMSprop`, `Adagrad`, `Adamax`) | `[TODO]` |
+| **Milestone 8** | End-to-End Deep Learning Applications & Benchmarking Suite | `[TODO]` |
 
 ---
 
-## Detailed Task Breakdown
+## Detailed Milestone Task Breakdown
 
-### Phase 1: Project Initialization & Agentic Documentation
-- [x] Create directory architecture (`src/numpygrad/{core,nn,optim,utils}`, `tests/`, `examples/`, `docs/`) `[DONE]`
-- [x] Author Product Requirements Document (`docs/PRD.md`) `[DONE]`
-- [x] Establish Engineering Constraints & Rules (`docs/RULES.md`) `[DONE]`
-- [x] Initialize Master Progress Tracker (`docs/TASK_PROGRESS.md`) `[DONE]`
-
----
-
-### Phase 2: Core Autograd & Dynamic Tensor Engine
-- [x] Implement `Tensor` base data structure with `.data`, `.grad`, `.creator`, `_backward` `[DONE]`
-- [x] Implement topological sorting and reverse-mode traversal in `backward()` `[DONE]`
-- [x] Implement broadcasting reduction helper (`_unbroadcast`) for gradient unbroadcasting `[DONE]`
-- [x] Implement elementary arithmetic operations (`+`, `-`, `*`, `/`, `**`, `@`, unary `-`) `[DONE]`
-- [x] Implement activation math functions (`relu`, `sigmoid`, `tanh`) `[DONE]`
-- [x] Implement reduction and tensor shaping operations (`sum`, `mean`, `reshape`, `transpose`) `[DONE]`
+### Milestone 1: Training Infrastructure
+- [x] Implement `Dataset` base class with feature/label storage, length calculation, and shape-validated indexing `[DONE]`
+- [x] Implement `TensorDataset` for multi-tensor grouping and slicing `[DONE]`
+- [x] Implement `DataLoader` with batching, deterministic seeding (`seed`/`generator`), remainder batch handling (`drop_last`), and batch collation `[DONE]`
+- [x] Implement recursive module execution modes (`Module.train()`, `Module.eval()`) `[DONE]`
+- [x] Verify `Dropout` and `BatchNorm1d` behavior across `train` and `eval` execution modes `[DONE]`
+- [x] Implement `no_grad()` and `enable_grad()` context managers and decorators in `core/tensor.py` `[DONE]`
+- [x] Implement `is_grad_enabled()` and `set_grad_enabled()` global tracking flags `[DONE]`
+- [x] Develop comprehensive unit test suite in `tests/test_training_infra.py` `[DONE]`
+- [x] Verify all existing and new unit tests pass with 100% test success rate `[DONE]`
 
 ---
 
-### Phase 3: Numerical Gradient Checking (`gradcheck`)
-- [x] Implement centered finite-difference approximation engine `[DONE]`
-- [x] Implement relative error metric calculation with zero/epsilon guarding `[DONE]`
-- [x] Build automated test harness for all core operations against analytical gradients `[DONE]`
+### Milestone 2: Advanced Tensor Operations & Math
+- [ ] Implement slicing (`__getitem__`, `__setitem__` with slice semantics) `[TODO]`
+- [ ] Implement tensor clamping (`clip`/`clamp`), `abs`, `exp`, `log`, `sqrt` with analytical derivatives `[TODO]`
+- [ ] Implement advanced reductions (`max`, `min`, `argmax`, `argmin`, `var`, `std`) `[TODO]`
+- [ ] Add finite-difference `gradcheck` validation for all new operations `[TODO]`
 
 ---
 
-### Phase 4: Neural Network Foundation & Layers
-- [x] Implement `Parameter` and base `Module` class with parameter recursion and `zero_grad()` `[DONE]`
-- [x] Implement weight initialization utilities (Xavier/Glorot, He/Kaiming, Uniform, Normal) `[DONE]`
-- [x] Implement `Linear` (Dense/Affine) layer with analytical gradient tracking `[DONE]`
-- [x] Implement `Sequential` container `[DONE]`
-- [x] Implement `Dropout` with inverted scaling for train/eval modes `[DONE]`
-- [x] Implement `BatchNorm1d` with running statistics tracking and mini-batch normalization `[DONE]`
-- [x] Implement modular activation layers (`ReLU`, `Sigmoid`, `Tanh`, `GELU`) `[DONE]`
+### Milestone 3: Additional Neural Network Layers & Containers
+- [ ] Implement `Conv2d` (2D Spatial Convolution) with analytical im2col / col2im gradients `[TODO]`
+- [ ] Implement `MaxPool2d` and `AvgPool2d` pooling layers `[TODO]`
+- [ ] Implement `Flatten` layer for multidimensional feature flattening `[TODO]`
+- [ ] Implement `LayerNorm` for sequence and transformer architectures `[TODO]`
+- [ ] Implement `ModuleList` and `ModuleDict` container modules `[TODO]`
 
 ---
 
-### Phase 5: Numerically Stable Loss Functions
-- [x] Implement `MSELoss` (Mean Squared Error) with reduction modes `[DONE]`
-- [x] Implement `CrossEntropyLoss` with Log-Sum-Exp trick `[DONE]`
-- [x] Implement `BCEWithLogitsLoss` with numerically stable log-sigmoid formulation `[DONE]`
+### Milestone 4: Advanced Loss Functions & Evaluation Metrics
+- [ ] Implement `NLLLoss` (Negative Log Likelihood) `[TODO]`
+- [ ] Implement `SmoothL1Loss` (Huber loss) `[TODO]`
+- [ ] Implement `KLDivLoss` (Kullback-Leibler Divergence) `[TODO]`
+- [ ] Implement classification metrics: `accuracy_score`, `precision_score`, `recall_score`, `f1_score` `[TODO]`
+- [ ] Implement regression metrics: `mean_absolute_error`, `r2_score` `[TODO]`
 
 ---
 
-### Phase 6: First-Order Optimizers
-- [x] Implement base `Optimizer` class `[DONE]`
-- [x] Implement `SGD` with Polyak momentum, dampening, and L2 weight decay `[DONE]`
-- [x] Implement `AdamW` with decoupled weight decay, first/second moment tracking, and bias correction `[DONE]`
+### Milestone 5: Learning Rate Schedulers
+- [ ] Implement base `_LRScheduler` class `[TODO]`
+- [ ] Implement `StepLR` and `MultiStepLR` decay schedulers `[TODO]`
+- [ ] Implement `ExponentialLR` scheduler `[TODO]`
+- [ ] Implement `CosineAnnealingLR` scheduler `[TODO]`
 
 ---
 
-### Phase 7: DAG Visualization & Diagnostic Utilities
-- [x] Implement dynamic computational graph visualizer (Matplotlib decision boundaries) `[DONE]`
-- [x] Implement lightweight training monitor and metrics history tracker `[DONE]`
+### Milestone 6: Model Serialization & State Management
+- [ ] Implement `state_dict()` on `Module` and `Optimizer` `[TODO]`
+- [ ] Implement `load_state_dict()` with strict parameter shape and key matching `[TODO]`
+- [ ] Implement `save_checkpoint()` and `load_checkpoint()` file serialization utilities `[TODO]`
 
 ---
 
-### Phase 8: Integration Tests & End-to-End Deep Learning Demos
-- [x] Full unit test suite with 100% `gradcheck` pass rate across all layers and losses `[DONE]`
-- [x] Demo 1: Multi-Layer Perceptron on 2D synthetic non-linear classification (Moons / Spirals) `[DONE]`
-- [x] Dataset and DataLoader batch iteration and shuffling pipeline `[DONE]`
+### Milestone 7: Advanced First-Order Optimizers
+- [ ] Implement `RMSprop` optimizer with centered variance tracking `[TODO]`
+- [ ] Implement `Adagrad` adaptive gradient optimizer `[TODO]`
+- [ ] Implement `Adamax` (infinity norm Adam variant) `[TODO]`
 
 ---
 
-### Phase 9: Interactive Streamlit Visualizer (`app/app.py`)
-- [x] Implement Streamlit web UI with dataset, architecture, and hyperparameter controls `[DONE]`
-- [x] Implement live decision boundary contour plotting and real-time metric tracking `[DONE]`
-- [x] Implement post-training layer-by-layer gradient norm diagnostic bar chart `[DONE]`
-- [x] Document interactive studio usage in README.md `[DONE]`
-
----
-
-### Phase 10: Documentation, CPU Benchmarking & Visual Showcase
-- [x] Enhance `README.md` with visual showcase, quickstart, mathematical core, and interactive studio `[DONE]`
-- [x] Implement PyTorch CPU benchmark (`benchmarks/benchmark_cpu.py`) with throughput and convergence comparison table `[DONE]`
-- [x] Audit type annotations, docstrings, and sign off on all project milestones `[DONE]`
+### Milestone 8: End-to-End Applications & Benchmarking Suite
+- [ ] Implement CNN image classification demo (synthetic / digit classification) `[TODO]`
+- [ ] Implement full PyTorch parity benchmark comparison `[TODO]`
+- [ ] Audit all documentation, type annotations, and docstrings `[TODO]`
