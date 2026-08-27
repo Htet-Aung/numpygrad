@@ -240,25 +240,44 @@ def find_safe_waypoints(
 
     safe_points = grid_points[safe_indices]
 
-    # Partition into left and right / opposite quadrants
-    left_mask = (safe_points[:, 0] < -0.5)
-    right_mask = (safe_points[:, 0] > 0.5)
-
     best_pair = None
 
-    if np.any(left_mask) and np.any(right_mask):
-        left_pts = safe_points[left_mask]
-        right_pts = safe_points[right_mask]
-        if len(left_pts) > 60:
-            left_pts = left_pts[:: max(1, len(left_pts) // 60)]
-        if len(right_pts) > 60:
-            right_pts = right_pts[:: max(1, len(right_pts) // 60)]
+    # 1. Prefer top-left entrance (x < -0.4, y > 0.3) and bottom-right exit (x > 0.4, y < -0.3)
+    tl_mask = (safe_points[:, 0] < -0.4) & (safe_points[:, 1] > 0.3)
+    br_mask = (safe_points[:, 0] > 0.4) & (safe_points[:, 1] < -0.3)
 
-        dists = np.linalg.norm(left_pts[:, None, :] - right_pts[None, :, :], axis=-1)
+    if np.any(tl_mask) and np.any(br_mask):
+        tl_pts = safe_points[tl_mask]
+        br_pts = safe_points[br_mask]
+        if len(tl_pts) > 60:
+            tl_pts = tl_pts[:: max(1, len(tl_pts) // 60)]
+        if len(br_pts) > 60:
+            br_pts = br_pts[:: max(1, len(br_pts) // 60)]
+
+        dists = np.linalg.norm(tl_pts[:, None, :] - br_pts[None, :, :], axis=-1)
         max_idx = np.unravel_index(np.argmax(dists), dists.shape)
         if dists[max_idx] >= min_distance:
-            best_pair = (left_pts[max_idx[0]], right_pts[max_idx[1]])
+            best_pair = (tl_pts[max_idx[0]], br_pts[max_idx[1]])
 
+    # 2. General opposite sides (left vs right)
+    if best_pair is None:
+        left_mask = (safe_points[:, 0] < -0.5)
+        right_mask = (safe_points[:, 0] > 0.5)
+
+        if np.any(left_mask) and np.any(right_mask):
+            left_pts = safe_points[left_mask]
+            right_pts = safe_points[right_mask]
+            if len(left_pts) > 60:
+                left_pts = left_pts[:: max(1, len(left_pts) // 60)]
+            if len(right_pts) > 60:
+                right_pts = right_pts[:: max(1, len(right_pts) // 60)]
+
+            dists = np.linalg.norm(left_pts[:, None, :] - right_pts[None, :, :], axis=-1)
+            max_idx = np.unravel_index(np.argmax(dists), dists.shape)
+            if dists[max_idx] >= min_distance:
+                best_pair = (left_pts[max_idx[0]], right_pts[max_idx[1]])
+
+    # 3. Maximum distance pair fallback
     if best_pair is None:
         sample_pts = safe_points
         if len(sample_pts) > 100:

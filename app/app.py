@@ -415,44 +415,91 @@ def load_preset_checkerboard_xor(
 
 
 def load_preset_s_bend_corridor(
-    n_samples: int = 260, noise: float = 0.04, random_state: int = 42
+    n_samples: int = 480, noise: float = 0.02, random_state: int = 42
 ) -> Tuple[List[List[float]], List[int]]:
-    """Generates Two Interlocking Horizontal Barrier Walls forcing an S-shaped navigation corridor."""
+    """
+    Generates a Multi-Turn Interlocking Serpentine Corridor Maze on [-2.0, 2.0] x [-2.0, 2.0]
+    with outer perimeter boundaries, 3 horizontal baffle walls, and a continuous 4-channel winding path.
+    """
     rng = np.random.default_rng(random_state)
     pts_X: List[List[float]] = []
     pts_y: List[int] = []
 
-    # Class 1 (Red Obstacle Walls)
-    # Top horizontal barrier: y=0.75, x in [-2.2, 0.6]
-    for x_val in np.linspace(-2.2, 0.6, 24):
-        pts_X.append([round(float(x_val + rng.normal(0, noise)), 3), round(float(0.75 + rng.normal(0, noise)), 3)])
-        pts_y.append(1)
+    # -------------------------------------------------------------
+    # 1. Hazard Walls (Class 1 / Red)
+    # -------------------------------------------------------------
+    def add_wall_segment(p1, p2, count):
+        xs = np.linspace(p1[0], p2[0], count)
+        ys = np.linspace(p1[1], p2[1], count)
+        for x, y in zip(xs, ys):
+            pts_X.append([
+                round(float(x + rng.normal(0, noise)), 3),
+                round(float(y + rng.normal(0, noise)), 3),
+            ])
+            pts_y.append(1)
 
-    # Bottom horizontal barrier: y=-0.75, x in [-0.6, 2.2]
-    for x_val in np.linspace(-0.6, 2.2, 24):
-        pts_X.append([round(float(x_val + rng.normal(0, noise)), 3), round(float(-0.75 + rng.normal(0, noise)), 3)])
-        pts_y.append(1)
+    # Outer perimeter with entry (top-left) & exit (bottom-right) openings
+    # Top wall: x in [-1.15, 2.0], y = 2.0
+    add_wall_segment((-1.15, 2.0), (2.0, 2.0), 32)
+    # Bottom wall: x in [-2.0, 1.15], y = -2.0
+    add_wall_segment((-2.0, -2.0), (1.15, -2.0), 32)
+    # Left wall: x = -2.0, y in [-2.0, 1.15]
+    add_wall_segment((-2.0, -2.0), (-2.0, 1.15), 32)
+    # Right wall: x = 2.0, y in [-1.15, 2.0]
+    add_wall_segment((2.0, -1.15), (2.0, 2.0), 32)
 
-    # Class 0 (Blue Free Space Paths)
-    # Upper channel
-    for x_val in np.linspace(-2.0, 1.8, 16):
-        pts_X.append([round(float(x_val + rng.normal(0, noise)), 3), round(float(1.45 + rng.normal(0, noise)), 3)])
+    # Interior Baffle Walls:
+    # Wall 1 at y = 1.0, x in [-2.0, 0.85] (opening on right: x in [0.85, 2.0])
+    add_wall_segment((-2.0, 1.0), (0.85, 1.0), 32)
+    # Wall 2 at y = 0.0, x in [-0.85, 2.0] (opening on left: x in [-2.0, -0.85])
+    add_wall_segment((-0.85, 0.0), (2.0, 0.0), 32)
+    # Wall 3 at y = -1.0, x in [-2.0, 0.85] (opening on right: x in [0.85, 2.0])
+    add_wall_segment((-2.0, -1.0), (0.85, -1.0), 32)
+
+    # -------------------------------------------------------------
+    # 2. Free Space Corridor (Class 0 / Blue)
+    # -------------------------------------------------------------
+    def add_corridor_lane(p1, p2, count, offset_spread=0.10):
+        xs = np.linspace(p1[0], p2[0], count)
+        ys = np.linspace(p1[1], p2[1], count)
+        for x, y in zip(xs, ys):
+            # Center track
+            pts_X.append([round(float(x + rng.normal(0, noise)), 3), round(float(y + rng.normal(0, noise)), 3)])
+            pts_y.append(0)
+            # Parallel tracks for corridor clearance
+            for s in [-offset_spread, offset_spread]:
+                if abs(p2[0] - p1[0]) > abs(p2[1] - p1[1]):
+                    # Horizontal channel -> offset in y
+                    pts_X.append([round(float(x + rng.normal(0, noise)), 3), round(float(y + s + rng.normal(0, noise)), 3)])
+                else:
+                    # Vertical chute -> offset in x
+                    pts_X.append([round(float(x + s + rng.normal(0, noise)), 3), round(float(y + rng.normal(0, noise)), 3)])
+                pts_y.append(0)
+
+    # Channel 1 (Top Entrance): x in [-1.6, 1.45], y = 1.5
+    add_corridor_lane((-1.6, 1.5), (1.45, 1.5), 14, offset_spread=0.12)
+    # Turn 1 (Right Chute): x = 1.45, y in [0.5, 1.5]
+    add_corridor_lane((1.45, 1.5), (1.45, 0.5), 8, offset_spread=0.12)
+
+    # Channel 2 (Upper-Mid): x in [1.45, -1.45], y = 0.5
+    add_corridor_lane((1.45, 0.5), (-1.45, 0.5), 14, offset_spread=0.12)
+    # Turn 2 (Left Chute): x = -1.45, y in [-0.5, 0.5]
+    add_corridor_lane((-1.45, 0.5), (-1.45, -0.5), 8, offset_spread=0.12)
+
+    # Channel 3 (Lower-Mid): x in [-1.45, 1.45], y = -0.5
+    add_corridor_lane((-1.45, -0.5), (1.45, -0.5), 14, offset_spread=0.12)
+    # Turn 3 (Right Chute): x = 1.45, y in [-1.5, -0.5]
+    add_corridor_lane((1.45, -0.5), (1.45, -1.5), 8, offset_spread=0.12)
+
+    # Channel 4 (Bottom Exit): x in [-1.45, 1.6], y = -1.5
+    add_corridor_lane((-1.45, -1.5), (1.6, -1.5), 14, offset_spread=0.12)
+
+    # Extra Entrance & Exit buffer clusters
+    for _ in range(8):
+        pts_X.append([round(float(-1.6 + rng.normal(0, 0.06)), 3), round(float(1.5 + rng.normal(0, 0.06)), 3)])
         pts_y.append(0)
-    # Right chute
-    for y_val in np.linspace(-0.4, 0.4, 8):
-        pts_X.append([round(float(1.35 + rng.normal(0, noise)), 3), round(float(y_val + rng.normal(0, noise)), 3)])
-        pts_y.append(0)
-    # Middle channel
-    for x_val in np.linspace(-1.5, 1.3, 14):
-        pts_X.append([round(float(x_val + rng.normal(0, noise)), 3), round(float(0.0 + rng.normal(0, noise)), 3)])
-        pts_y.append(0)
-    # Left chute
-    for y_val in np.linspace(-0.4, 0.4, 8):
-        pts_X.append([round(float(-1.35 + rng.normal(0, noise)), 3), round(float(y_val + rng.normal(0, noise)), 3)])
-        pts_y.append(0)
-    # Lower channel
-    for x_val in np.linspace(-1.8, 2.0, 16):
-        pts_X.append([round(float(x_val + rng.normal(0, noise)), 3), round(float(-1.45 + rng.normal(0, noise)), 3)])
+    for _ in range(8):
+        pts_X.append([round(float(1.6 + rng.normal(0, 0.06)), 3), round(float(-1.5 + rng.normal(0, 0.06)), 3)])
         pts_y.append(0)
 
     return pts_X, pts_y
@@ -519,12 +566,14 @@ def load_preset_spirals(
 
 
 # Aliases for backward compatibility
+load_preset_corridor_maze = load_preset_s_bend_corridor
 load_custom_maze_preset = load_preset_s_bend_corridor
 load_custom_ring_preset = load_preset_island_in_moat
 
 PRESET_GENERATOR_MAP = {
     "Island in Moat": load_preset_island_in_moat,
     "Checkerboard XOR": load_preset_checkerboard_xor,
+    "Corridor Maze": load_preset_s_bend_corridor,
     "S-Bend Corridor": load_preset_s_bend_corridor,
     "Double Cross": load_preset_double_cross,
     "Spirals": load_preset_spirals,
@@ -1981,8 +2030,8 @@ def render_single_model_studio():
         st.subheader("1. Dataset Configuration")
         dataset_name = st.selectbox(
             "Dataset Topology",
-            ["Island in Moat", "Checkerboard XOR", "S-Bend Corridor", "Double Cross", "Spirals", "Custom / Interactive Canvas"],
-            index=1,
+            ["Island in Moat", "Checkerboard XOR", "Corridor Maze", "Double Cross", "Spirals", "Custom / Interactive Canvas"],
+            index=2,
             key="single_dataset_name",
         )
         if dataset_name in ["Custom Canvas", "Custom / Interactive Canvas"]:
@@ -2003,7 +2052,7 @@ def render_single_model_studio():
             )
             st.selectbox(
                 "Load Preset Pattern:",
-                ["-- Select Preset --", "Island in Moat", "Checkerboard XOR", "S-Bend Corridor", "Double Cross", "Spirals"],
+                ["-- Select Preset --", "Island in Moat", "Checkerboard XOR", "Corridor Maze", "Double Cross", "Spirals"],
                 key="canvas_preset_selector",
             )
             c_p1, c_p2 = st.columns(2)
@@ -2458,7 +2507,7 @@ def render_single_model_studio():
 
                 ps_c1, ps_c2, ps_c3 = st.columns([2, 1, 1])
                 with ps_c1:
-                    st.selectbox("Load Preset Pattern:", ["-- Select Preset --", "Island in Moat", "Checkerboard XOR", "S-Bend Corridor", "Double Cross", "Spirals"], key="canvas_preset_selector")
+                    st.selectbox("Load Preset Pattern:", ["-- Select Preset --", "Island in Moat", "Checkerboard XOR", "Corridor Maze", "Double Cross", "Spirals"], key="canvas_preset_selector")
                 with ps_c2:
                     st.button("Load Pattern", width="stretch", key="btn_load_pattern_main", on_click=_cb_load_preset_from_selector)
                 with ps_c3:
@@ -2504,7 +2553,7 @@ def render_single_model_studio():
                 st.markdown(
                     "1. **Select Tool & Density** in the toolbar above or the sidebar.\n"
                     "2. **Click on the canvas** to drop points or erase nearby points.\n"
-                    "3. Load any preset pattern (**Island in Moat**, **Checkerboard XOR**, **S-Bend Corridor**, **Double Cross**, **Spirals**) as a baseline and customize.\n"
+                    "3. Load any preset pattern (**Island in Moat**, **Checkerboard XOR**, **Corridor Maze**, **Double Cross**, **Spirals**) as a baseline and customize.\n"
                     "4. Click **Start Training** to build and train the neural network on your custom layout.\n"
                     "5. Open **Tab 2 (Autonomous Neural Pathfinding)** to navigate the Rover across your custom course!"
                 )
@@ -2543,8 +2592,8 @@ def render_model_comparison_studio():
         st.subheader("1. Shared Dataset")
         dataset_name = st.selectbox(
             "Dataset Topology",
-            ["Island in Moat", "Checkerboard XOR", "S-Bend Corridor", "Double Cross", "Spirals", "Custom / Interactive Canvas"],
-            index=1,
+            ["Island in Moat", "Checkerboard XOR", "Corridor Maze", "Double Cross", "Spirals", "Custom / Interactive Canvas"],
+            index=2,
             key="comp_dataset_name",
         )
         if dataset_name in ["Custom Canvas", "Custom / Interactive Canvas"]:
