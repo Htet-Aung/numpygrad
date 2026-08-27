@@ -15,6 +15,7 @@ import numpy as np
 
 from numpygrad.nn.module import Module, Parameter
 import numpygrad.nn.layers as layers_module
+import numpygrad.nn.convolution as conv_module
 
 
 # Registry of known serializable layer classes
@@ -28,6 +29,8 @@ _LAYER_REGISTRY: Dict[str, Type[Module]] = {
     "Tanh": layers_module.Tanh,
     "GELU": layers_module.GELU,
     "Flatten": layers_module.Flatten,
+    "Conv2D": conv_module.Conv2D,
+    "MaxPool2D": conv_module.MaxPool2D,
 }
 
 
@@ -83,6 +86,27 @@ def get_layer_config(layer: Module) -> Dict[str, Any]:
             "config": {
                 "start_dim": layer.start_dim,
                 "end_dim": layer.end_dim,
+            },
+        }
+    elif isinstance(layer, conv_module.Conv2D):
+        return {
+            "type": "Conv2D",
+            "config": {
+                "in_channels": layer.in_channels,
+                "out_channels": layer.out_channels,
+                "kernel_size": list(layer.kernel_size),
+                "stride": list(layer.stride),
+                "padding": list(layer.padding),
+                "bias": layer.bias is not None,
+            },
+        }
+    elif isinstance(layer, conv_module.MaxPool2D):
+        return {
+            "type": "MaxPool2D",
+            "config": {
+                "kernel_size": list(layer.kernel_size),
+                "stride": list(layer.stride),
+                "padding": list(layer.padding),
             },
         }
     elif isinstance(layer, (layers_module.ReLU, layers_module.Sigmoid, layers_module.Tanh, layers_module.GELU)):

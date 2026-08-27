@@ -21,6 +21,7 @@ from numpygrad.nn.layers import (
     GELU,
     Flatten,
 )
+from numpygrad.nn.convolution import Conv2D, MaxPool2D
 from numpygrad.nn.losses import (
     MSELoss,
     CrossEntropyLoss,
@@ -43,6 +44,8 @@ __all__ = [
     "Tanh",
     "GELU",
     "Flatten",
+    "Conv2D",
+    "MaxPool2D",
     "MSELoss",
     "CrossEntropyLoss",
     "BCEWithLogitsLoss",

@@ -253,7 +253,7 @@ def verify_slicing(eps: float, rtol: float, atol: float) -> bool:
 def verify_flatten(eps: float, rtol: float, atol: float) -> bool:
     np.random.seed(42)
     layer = nn.Flatten(start_dim=1, end_dim=-1)
-    x = Tensor(np.random.randn(4, 3, 4, 4).astype(np.float32), requires_grad=True)
+    x = Tensor(np.random.randn(4, 3, 4, 4).astype(np.float64), requires_grad=True)
 
     def f(x_t):
         return (layer(x_t) ** 2.0).sum()
@@ -269,13 +269,61 @@ def verify_flatten(eps: float, rtol: float, atol: float) -> bool:
     )
 
 
+def verify_conv2d(eps: float, rtol: float, atol: float) -> bool:
+    np.random.seed(42)
+    conv = nn.Conv2D(in_channels=2, out_channels=3, kernel_size=3, stride=1, padding=1, bias=True)
+    conv.weight.data = conv.weight.data.astype(np.float64)
+    conv.bias.data = conv.bias.data.astype(np.float64)
+    x = Tensor(np.random.randn(2, 2, 5, 5).astype(np.float64), requires_grad=True)
+
+    def f(x_t, w_t, b_t):
+        conv.weight = w_t
+        conv.bias = b_t
+        out = conv(x_t)
+        return (out ** 2.0).sum()
+
+    return run_gradcheck_diagnostic(
+        func=f,
+        inputs=[x, conv.weight, conv.bias],
+        names=["Input X (2, 2, 5, 5)", "Conv2D Weight (3, 2, 3, 3)", "Conv2D Bias (3,)"],
+        eps=eps,
+        rtol=rtol,
+        atol=atol,
+        title="Conv2D Layer (Vectorized im2col/col2im)",
+    )
+
+
+def verify_maxpool2d(eps: float, rtol: float, atol: float) -> bool:
+    np.random.seed(42)
+    pool = nn.MaxPool2D(kernel_size=2, stride=2, padding=0)
+    # Ensure distinct values to avoid subgradient ambiguity at ties
+    flat = np.arange(2 * 2 * 6 * 6, dtype=np.float64)
+    np.random.shuffle(flat)
+    x_data = flat.reshape(2, 2, 6, 6)
+    x = Tensor(x_data, requires_grad=True)
+
+    def f(x_t):
+        out = pool(x_t)
+        return (out ** 2.0).sum()
+
+    return run_gradcheck_diagnostic(
+        func=f,
+        inputs=[x],
+        names=["Input X (2, 2, 6, 6)"],
+        eps=eps,
+        rtol=rtol,
+        atol=atol,
+        title="MaxPool2D Layer (Spatial Max Routing)",
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description="NumPyGrad Numerical Gradient Verifier")
     parser.add_argument(
         "--layer",
         type=str,
         default="all",
-        choices=["all", "linear", "relu", "cross_entropy", "batchnorm", "slicing", "flatten"],
+        choices=["all", "linear", "relu", "cross_entropy", "batchnorm", "slicing", "flatten", "conv2d", "maxpool2d"],
         help="Target operation or layer to verify (default: all)",
     )
     parser.add_argument("--eps", type=float, default=1e-5, help="Finite difference perturbation epsilon")
@@ -291,6 +339,8 @@ def main():
         "batchnorm": verify_batchnorm,
         "slicing": verify_slicing,
         "flatten": verify_flatten,
+        "conv2d": verify_conv2d,
+        "maxpool2d": verify_maxpool2d,
     }
 
     if args.layer == "all":

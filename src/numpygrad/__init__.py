@@ -15,6 +15,7 @@ from numpygrad.data.dataloader import DataLoader
 from numpygrad.serialization import save_model, load_model
 from numpygrad.metrics.classification import accuracy, confusion_matrix
 from numpygrad.nn.layers import Flatten
+from numpygrad.nn.convolution import Conv2D, MaxPool2D
 from numpygrad.utils.gradcheck import gradcheck
 import numpygrad.nn as nn
 import numpygrad.optim as optim
@@ -37,6 +38,8 @@ __all__ = [
     "accuracy",
     "confusion_matrix",
     "Flatten",
+    "Conv2D",
+    "MaxPool2D",
     "gradcheck",
     "nn",
     "optim",
