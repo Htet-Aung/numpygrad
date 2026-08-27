@@ -205,6 +205,14 @@ st.markdown(
         color: #6c757d;
         margin: 0;
     }
+
+    /* Make drawable canvas toolbar icons clearly visible */
+    div[data-testid="stDrawableCanvas"] button,
+    div[data-testid="stDrawableCanvas"] svg {
+        fill: #E0E0E0 !important;
+        color: #E0E0E0 !important;
+        filter: drop-shadow(0px 0px 2px rgba(255, 255, 255, 0.4));
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -433,15 +441,17 @@ def preprocess_canvas_image(canvas_result) -> np.ndarray | None:
 
     img_data = canvas_result.image_data  # (H, W, 4) RGBA uint8
 
-    # Extract the alpha channel (white stroke on black background)
-    alpha = img_data[:, :, 3].astype(np.float32)
+    # Extract the drawing channel (white stroke on black background)
+    gray = np.maximum(img_data[:, :, 0], img_data[:, :, 3]).astype(np.float32)
 
     # Check if canvas is blank
-    if alpha.max() < 10.0:
+    if gray.max() < 10.0 or gray.sum() < 50.0:
         return None
 
-    # Binarize with a low threshold to capture strokes
-    mask = alpha > 15.0
+    # Binarize with a low threshold to identify drawn strokes
+    mask = gray > 15.0
+    if not np.any(mask):
+        return None
 
     # Find bounding box of drawn content
     rows = np.any(mask, axis=1)
@@ -449,55 +459,54 @@ def preprocess_canvas_image(canvas_result) -> np.ndarray | None:
     rmin, rmax = np.where(rows)[0][[0, -1]]
     cmin, cmax = np.where(cols)[0][[0, -1]]
 
-    # Crop to bounding box
-    cropped = alpha[rmin:rmax + 1, cmin:cmax + 1]
-
-    # Pad to square with aspect ratio preservation
+    # Crop strictly to the non-zero bounding box
+    cropped = gray[rmin:rmax + 1, cmin:cmax + 1]
     h, w = cropped.shape
-    max_side = max(h, w)
+    if h <= 0 or w <= 0:
+        return None
 
-    # Add proportional margin (20% of the max side, matching MNIST convention)
-    margin = int(max_side * 0.2)
-    padded_size = max_side + 2 * margin
+    # Resize bounding box to fit within a 20x20 box preserving aspect ratio
+    if h > w:
+        new_h = 20
+        new_w = max(1, int(round(w * 20.0 / h)))
+    else:
+        new_w = 20
+        new_h = max(1, int(round(h * 20.0 / w)))
 
-    padded = np.zeros((padded_size, padded_size), dtype=np.float32)
-    y_offset = (padded_size - h) // 2
-    x_offset = (padded_size - w) // 2
-    padded[y_offset:y_offset + h, x_offset:x_offset + w] = cropped
+    pil_cropped = Image.fromarray(cropped.astype(np.uint8), mode="L")
+    pil_resized = pil_cropped.resize((new_w, new_h), Image.Resampling.BILINEAR)
+    resized = np.array(pil_resized, dtype=np.float32)
 
-    # Resize to 28x28 using PIL LANCZOS resampling
-    pil_img = Image.fromarray(padded.astype(np.uint8), mode="L")
-    pil_img = pil_img.resize((28, 28), Image.Resampling.LANCZOS)
-    img_28 = np.array(pil_img, dtype=np.float32)
+    # Pad into the center of a 28x28 image
+    digit_28 = np.zeros((28, 28), dtype=np.float32)
+    y_offset = (28 - new_h) // 2
+    x_offset = (28 - new_w) // 2
+    digit_28[y_offset:y_offset + new_h, x_offset:x_offset + new_w] = resized
 
-    # Center of mass shift (standard MNIST preprocessing)
-    # Compute center of mass and shift so it aligns to center (14, 14)
-    total_mass = img_28.sum()
+    # Center-of-mass shift (standard MNIST format)
+    total_mass = digit_28.sum()
     if total_mass > 0:
         gy, gx = np.mgrid[0:28, 0:28]
-        cy = (gy * img_28).sum() / total_mass
-        cx = (gx * img_28).sum() / total_mass
-        shift_y = int(round(14.0 - cy))
-        shift_x = int(round(14.0 - cx))
+        cy = (gy * digit_28).sum() / total_mass
+        cx = (gx * digit_28).sum() / total_mass
+        shift_y = int(np.round(14.0 - cy))
+        shift_x = int(np.round(14.0 - cx))
+        shift_y = int(np.clip(shift_y, -4, 4))
+        shift_x = int(np.clip(shift_x, -4, 4))
 
-        # Apply shift via roll (with zero-fill at edges)
-        shifted = np.zeros_like(img_28)
-        src_y_start = max(0, -shift_y)
-        src_y_end = min(28, 28 - shift_y)
-        src_x_start = max(0, -shift_x)
-        src_x_end = min(28, 28 - shift_x)
-        dst_y_start = max(0, shift_y)
-        dst_y_end = min(28, 28 + shift_y)
-        dst_x_start = max(0, shift_x)
-        dst_x_end = min(28, 28 + shift_x)
-        shifted[dst_y_start:dst_y_end, dst_x_start:dst_x_end] = img_28[src_y_start:src_y_end, src_x_start:src_x_end]
-        img_28 = shifted
+        shifted = np.zeros_like(digit_28)
+        for r in range(28):
+            for c in range(28):
+                nr, nc = r + shift_y, c + shift_x
+                if 0 <= nr < 28 and 0 <= nc < 28:
+                    shifted[nr, nc] = digit_28[r, c]
+        digit_28 = shifted
 
-    # Normalize to [0.0, 1.0]
-    img_28 = img_28 / 255.0
+    # Normalize pixel values strictly to [0.0, 1.0]
+    digit_28 = np.clip(digit_28 / 255.0, 0.0, 1.0)
 
     # Reshape to (1, 28, 28) batch tensor
-    return img_28.reshape(1, 28, 28)
+    return digit_28.reshape(1, 28, 28)
 
 
 def stable_softmax(logits: np.ndarray) -> np.ndarray:
@@ -745,11 +754,7 @@ def render_mnist_inference_tab():
 
         if processed is not None:
             st.subheader("Preprocessed Input (28x28)")
-            # Scale up for visibility
-            preview = (processed[0] * 255).astype(np.uint8)
-            preview_img = Image.fromarray(preview, mode="L")
-            preview_img = preview_img.resize((140, 140), Image.Resampling.NEAREST)
-            st.image(preview_img, caption="Normalized and centered", width=140)
+            st.image(processed[0], clamp=True, width=140, caption="28x28 Centered MNIST Input")
 
     with col_results:
         if processed is not None:
@@ -803,7 +808,7 @@ def render_mnist_inference_tab():
             st.pyplot(fig_probs)
             plt.close(fig_probs)
         else:
-            st.info("Draw a digit on the canvas to see the model prediction.")
+            st.info("Draw a digit on the canvas to see predictions.")
 
 
 # -----------------------------------------------------------------------------
