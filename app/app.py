@@ -1096,6 +1096,8 @@ def plot_plotly_rover_path(
             mode="markers",
             name="Free Space Data",
             marker=dict(color="#3B82F6", size=5, opacity=0.35),
+            selected=dict(marker=dict(opacity=0.35)),
+            unselected=dict(marker=dict(opacity=0.35)),
             hoverinfo="skip",
         )
     )
@@ -1106,7 +1108,27 @@ def plot_plotly_rover_path(
             mode="markers",
             name="Obstacle Data",
             marker=dict(color="#EF4444", size=5, opacity=0.35),
+            selected=dict(marker=dict(opacity=0.35)),
+            unselected=dict(marker=dict(opacity=0.35)),
             hoverinfo="skip",
+        )
+    )
+
+    # 3. Dense Invisible Click-Capture Grid (enables direct click waypoint placement anywhere on canvas)
+    grid_click_x = np.linspace(-2.5, 2.5, 65)
+    grid_click_y = np.linspace(-2.5, 2.5, 65)
+    cg_x, cg_y = np.meshgrid(grid_click_x, grid_click_y)
+    fig.add_trace(
+        go.Scatter(
+            x=cg_x.ravel(),
+            y=cg_y.ravel(),
+            mode="markers",
+            name="Click Capture Grid",
+            marker=dict(size=14, opacity=0, color="rgba(0,0,0,0)"),
+            hoverinfo="skip",
+            showlegend=False,
+            selected=dict(marker=dict(opacity=0)),
+            unselected=dict(marker=dict(opacity=0)),
         )
     )
 
@@ -1121,7 +1143,7 @@ def plot_plotly_rover_path(
             clamped_step = len(trajectory) - 1
             active_trajectory = trajectory
 
-        # 3. Radar Sensor Rays
+        # 4. Radar Sensor Rays
         def get_ray_color(h: float) -> str:
             if h < 0.25:
                 return "#10B981"  # Green: Clear
@@ -1145,6 +1167,8 @@ def plot_plotly_rover_path(
                                 mode="lines+markers",
                                 line=dict(color=r_col, width=2.8, dash="solid"),
                                 marker=dict(size=6, color=r_col, symbol="diamond"),
+                                selected=dict(marker=dict(opacity=1.0)),
+                                unselected=dict(marker=dict(opacity=1.0)),
                                 hovertext=[f"Origin ({p_origin[0]:.2f}, {p_origin[1]:.2f})", f"Ray #{r_idx+1}: Hazard P={h_val*100:.1f}%"],
                                 hoverinfo="text",
                                 showlegend=False,
@@ -1171,7 +1195,7 @@ def plot_plotly_rover_path(
                             )
                         )
 
-        # 4. Rover Path Trajectory
+        # 5. Rover Path Trajectory
         traj_x = [p[0] for p in active_trajectory]
         traj_y = [p[1] for p in active_trajectory]
         fig.add_trace(
@@ -1182,12 +1206,14 @@ def plot_plotly_rover_path(
                 name="Rover Path",
                 line=dict(color="#FBBF24", width=3.5),
                 marker=dict(color="#F59E0B", size=6, symbol="circle"),
+                selected=dict(marker=dict(opacity=1.0)),
+                unselected=dict(marker=dict(opacity=1.0)),
                 hovertext=[f"Step {idx}: ({p[0]:.2f}, {p[1]:.2f})" for idx, p in enumerate(active_trajectory)],
                 hoverinfo="text",
             )
         )
 
-    # 5. Start Marker (Green circle)
+    # 6. Start Marker (Green circle)
     fig.add_trace(
         go.Scatter(
             x=[start_pos[0]],
@@ -1198,12 +1224,14 @@ def plot_plotly_rover_path(
             textposition="top center",
             textfont=dict(color="#10B981", size=11),
             marker=dict(symbol="circle", size=16, color="#10B981", line=dict(color="#FFFFFF", width=2)),
+            selected=dict(marker=dict(opacity=1.0)),
+            unselected=dict(marker=dict(opacity=1.0)),
             hovertext=[f"Start Position: ({start_pos[0]:.2f}, {start_pos[1]:.2f})"],
             hoverinfo="text",
         )
     )
 
-    # 6. Target Marker (Red Diamond / Goal)
+    # 7. Target Marker (Red Diamond / Goal)
     fig.add_trace(
         go.Scatter(
             x=[target_pos[0]],
@@ -1214,12 +1242,14 @@ def plot_plotly_rover_path(
             textposition="top center",
             textfont=dict(color="#EF4444", size=11),
             marker=dict(symbol="diamond", size=16, color="#EF4444", line=dict(color="#FFFFFF", width=2)),
+            selected=dict(marker=dict(opacity=1.0)),
+            unselected=dict(marker=dict(opacity=1.0)),
             hovertext=[f"Target Goal: ({target_pos[0]:.2f}, {target_pos[1]:.2f})"],
             hoverinfo="text",
         )
     )
 
-    # 7. Active Rover Position Marker (Glowing gold cross at current step)
+    # 8. Active Rover Position Marker (Glowing gold cross at current step)
     if has_sim:
         curr_rover_pos = active_trajectory[-1]
         fig.add_trace(
@@ -1232,6 +1262,8 @@ def plot_plotly_rover_path(
                 textposition="bottom center",
                 textfont=dict(color="#FBBF24", size=11, family="sans-serif"),
                 marker=dict(symbol="cross", size=14, color="#FBBF24", line=dict(color="#FFFFFF", width=2)),
+                selected=dict(marker=dict(opacity=1.0)),
+                unselected=dict(marker=dict(opacity=1.0)),
                 hovertext=[f"Current Rover: ({curr_rover_pos[0]:.2f}, {curr_rover_pos[1]:.2f}) at Step {clamped_step}"],
                 hoverinfo="text",
             )
@@ -2864,6 +2896,22 @@ def render_neural_pathfinding_tab():
                 help="Scrub through the rover's trajectory to inspect position, heading, and sensor radar rays at each individual step.",
             )
 
+            # Placement Mode Selector & Waypoint Click Helper
+            col_click_mode, col_click_info = st.columns([1, 1])
+            with col_click_mode:
+                st.radio(
+                    "Click on Map Sets:",
+                    ["Start Point (S) [Green]", "Target Point (T) [Red]"],
+                    horizontal=True,
+                    key="rover_waypoint_click_mode",
+                    help="Click anywhere on the potential field map to position Start (S) or Target (T).",
+                )
+            with col_click_info:
+                if target_haz > 0.50 or start_haz > 0.50:
+                    st.warning("Warning: Waypoint is inside an obstacle zone! Click open blue space or use 'Auto-Detect Route'.")
+                else:
+                    st.caption("Tip: Click anywhere on the contour map to instantly relocate the selected waypoint.")
+
             # Visual Simulation Plot & Diagnostics
             col_chart, col_details = st.columns([3, 2])
             with col_chart:
@@ -2880,12 +2928,32 @@ def render_neural_pathfinding_tab():
                         step_index=step_idx,
                         title=f"Rover Mission on {dataset_name} ({arch_str}) - Step {step_idx}/{len(trajectory)-1}",
                     )
-                    st.plotly_chart(
+                    chart_event = st.plotly_chart(
                         fig_rover,
+                        on_select="rerun",
+                        selection_mode=["points"],
                         key="rover_plotly_map",
                         config={"displayModeBar": False, "scrollZoom": False},
                         width="stretch",
                     )
+                    if chart_event and hasattr(chart_event, "selection") and chart_event.selection:
+                        sel_pts = chart_event.selection.get("points", [])
+                        if sel_pts and "x" in sel_pts[0] and "y" in sel_pts[0]:
+                            cx = float(np.round(sel_pts[0]["x"], 2))
+                            cy = float(np.round(sel_pts[0]["y"], 2))
+                            mode = st.session_state.get("rover_waypoint_click_mode", "Start Point (S)")
+                            if "Start" in mode:
+                                if st.session_state.get("rover_start_x1") != cx or st.session_state.get("rover_start_x2") != cy:
+                                    st.session_state["rover_start_x1"] = cx
+                                    st.session_state["rover_start_x2"] = cy
+                                    st.session_state.pop("rover_sim", None)
+                                    st.rerun()
+                            else:
+                                if st.session_state.get("rover_target_x1") != cx or st.session_state.get("rover_target_x2") != cy:
+                                    st.session_state["rover_target_x1"] = cx
+                                    st.session_state["rover_target_x2"] = cy
+                                    st.session_state.pop("rover_sim", None)
+                                    st.rerun()
                 else:
                     fig_rover_mpl = plot_rover_path_mpl(model, X, y, trajectory[:step_idx+1], start_pos, target_pos)
                     st.pyplot(fig_rover_mpl)
@@ -2943,6 +3011,23 @@ def render_neural_pathfinding_tab():
         else:
             # Standby state before "Launch Rover Simulation" is clicked
             st.info("Mission Waypoints Positioned: Start (S) and Target (T) are set on the field. Click '**Launch Rover Simulation**' in the sidebar to simulate autonomous navigation.")
+
+            # Placement Mode Selector & Waypoint Click Helper (Standby)
+            col_click_mode_sb, col_click_info_sb = st.columns([1, 1])
+            with col_click_mode_sb:
+                st.radio(
+                    "Click on Map Sets:",
+                    ["Start Point (S) [Green]", "Target Point (T) [Red]"],
+                    horizontal=True,
+                    key="rover_waypoint_click_mode_sb",
+                    help="Click anywhere on the potential field map to position Start (S) or Target (T).",
+                )
+            with col_click_info_sb:
+                if target_haz > 0.50 or start_haz > 0.50:
+                    st.warning("Warning: Waypoint is inside an obstacle zone! Click open blue space or use 'Auto-Detect Route'.")
+                else:
+                    st.caption("Tip: Click anywhere on the contour map to instantly relocate the selected waypoint.")
+
             col_chart, col_details = st.columns([3, 2])
             with col_chart:
                 if HAS_PLOTLY:
@@ -2957,12 +3042,32 @@ def render_neural_pathfinding_tab():
                         show_rays=False,
                         title=f"Mission Route Planning on {dataset_name} ({arch_str})",
                     )
-                    st.plotly_chart(
+                    chart_event_sb = st.plotly_chart(
                         fig_rover,
+                        on_select="rerun",
+                        selection_mode=["points"],
                         key="rover_plotly_map_standby",
                         config={"displayModeBar": False, "scrollZoom": False},
                         width="stretch",
                     )
+                    if chart_event_sb and hasattr(chart_event_sb, "selection") and chart_event_sb.selection:
+                        sel_pts = chart_event_sb.selection.get("points", [])
+                        if sel_pts and "x" in sel_pts[0] and "y" in sel_pts[0]:
+                            cx = float(np.round(sel_pts[0]["x"], 2))
+                            cy = float(np.round(sel_pts[0]["y"], 2))
+                            mode = st.session_state.get("rover_waypoint_click_mode_sb", "Start Point (S)")
+                            if "Start" in mode:
+                                if st.session_state.get("rover_start_x1") != cx or st.session_state.get("rover_start_x2") != cy:
+                                    st.session_state["rover_start_x1"] = cx
+                                    st.session_state["rover_start_x2"] = cy
+                                    st.session_state.pop("rover_sim", None)
+                                    st.rerun()
+                            else:
+                                if st.session_state.get("rover_target_x1") != cx or st.session_state.get("rover_target_x2") != cy:
+                                    st.session_state["rover_target_x1"] = cx
+                                    st.session_state["rover_target_x2"] = cy
+                                    st.session_state.pop("rover_sim", None)
+                                    st.rerun()
                 else:
                     fig_rover_mpl = plot_rover_path_mpl(model, X, y, None, start_pos, target_pos)
                     st.pyplot(fig_rover_mpl)
