@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Zero DL Frameworks](https://img.shields.io/badge/Dependencies-Pure%20NumPy-brightgreen.svg)](#)
-[![Tests: 87/87 Passed](https://img.shields.io/badge/Tests-87%2F87%20Passed-success.svg)](#)
+[![Tests: 96/96 Passed](https://img.shields.io/badge/Tests-96%2F96%20Passed-success.svg)](#)
 
 A modular, educational deep learning library and dynamic tensor autograd engine built completely from scratch using **pure Python and NumPy**—with **zero external deep learning framework dependencies** (no PyTorch, JAX, TensorFlow, or Keras).
 

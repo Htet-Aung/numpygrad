@@ -15,11 +15,11 @@ This document tracks development progress across the milestones for evolving **N
 |---|---|---|
 | **Milestone 1** | Training Infrastructure (`Dataset`, `DataLoader`, train/eval modes, `no_grad`) | `[DONE]` |
 | **Milestone 2** | Model Persistence & Serialization (`save_model`, `load_model`, `.save()`, `.ng` container) | `[DONE]` |
-| **Milestone 3** | Advanced Tensor Operations & Math (Slicing, Advanced Indexing, Clamping) | `[TODO]` |
-| **Milestone 4** | Additional Neural Network Layers & Containers (`Conv2D`, `MaxPool2d`, `Flatten`, `LayerNorm`) | `[TODO]` |
-| **Milestone 5** | Advanced Loss Functions & Evaluation Metrics (`NLLLoss`, `SmoothL1Loss`, Accuracy, F1) | `[TODO]` |
-| **Milestone 6** | Learning Rate Schedulers (`StepLR`, `CosineAnnealingLR`, `ExponentialLR`) | `[TODO]` |
-| **Milestone 7** | Advanced First-Order Optimizers (`RMSprop`, `Adagrad`, `Adamax`) | `[TODO]` |
+| **Milestone 3** | Real Tabular Classification - Iris (`accuracy`, `confusion_matrix`, training & persistence) | `[DONE]` |
+| **Milestone 4** | Advanced Tensor Operations & Math (Slicing, Advanced Indexing, Clamping) | `[TODO]` |
+| **Milestone 5** | Additional Neural Network Layers & Containers (`Conv2D`, `MaxPool2d`, `Flatten`, `LayerNorm`) | `[TODO]` |
+| **Milestone 6** | Advanced Loss Functions & Evaluation Metrics (`NLLLoss`, `SmoothL1Loss`, F1 Score) | `[TODO]` |
+| **Milestone 7** | Learning Rate Schedulers (`StepLR`, `CosineAnnealingLR`, `ExponentialLR`) | `[TODO]` |
 | **Milestone 8** | End-to-End Deep Learning Applications & Benchmarking Suite | `[TODO]` |
 
 ---
@@ -49,7 +49,17 @@ This document tracks development progress across the milestones for evolving **N
 
 ---
 
-### Milestone 3: Advanced Tensor Operations & Math
+### Milestone 3: Real Tabular Classification - Iris
+- [x] Implement `accuracy` metric supporting logits and class indices in `src/numpygrad/metrics/` `[DONE]`
+- [x] Implement `confusion_matrix` pure NumPy calculation in `src/numpygrad/metrics/` `[DONE]`
+- [x] Export `metrics`, `accuracy`, `confusion_matrix` in root `numpygrad` package `[DONE]`
+- [x] Implement `examples/train_iris.py` end-to-end training, evaluation, and `.ng` model saving/reloading pipeline `[DONE]`
+- [x] Develop comprehensive unit tests in `tests/test_metrics.py` `[DONE]`
+- [x] Run full test suite with 100% test pass rate `[DONE]`
+
+---
+
+### Milestone 4: Advanced Tensor Operations & Math
 - [ ] Implement slicing (`__getitem__`, `__setitem__` with slice semantics) `[TODO]`
 - [ ] Implement tensor clamping (`clip`/`clamp`), `abs`, `exp`, `log`, `sqrt` with analytical derivatives `[TODO]`
 - [ ] Implement advanced reductions (`max`, `min`, `argmax`, `argmin`, `var`, `std`) `[TODO]`
