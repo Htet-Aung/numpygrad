@@ -208,17 +208,21 @@ st.markdown(
 
     /* Force visibility of canvas undo/redo/clear icons */
     div[data-testid="stDrawableCanvas"] ~ div button,
-    div[data-testid="stDrawableCanvas"] button,
+    div[data-testid="stDrawableCanvas"] button {
+        background-color: #31333F !important;
+        border: 1px solid #4A4A5A !important;
+        color: #FFFFFF !important;
+        border-radius: 4px !important;
+        margin: 2px !important;
+    }
+    div[data-testid="stDrawableCanvas"] svg {
+        fill: #FFFFFF !important;
+        stroke: #FFFFFF !important;
+    }
     div[data-testid="stDrawableCanvas"] svg path {
         fill: #FFFFFF !important;
         stroke: #FFFFFF !important;
         color: #FFFFFF !important;
-    }
-    div[data-testid="stDrawableCanvas"] button {
-        background-color: #262730 !important;
-        border: 1px solid #4A4A5A !important;
-        border-radius: 4px !important;
-        margin: 2px !important;
     }
     </style>
     """,
@@ -735,24 +739,23 @@ def render_mnist_inference_tab():
         st.subheader("Drawing Canvas")
 
         # Canvas controls
-        stroke_width = st.slider(
+        brush_width = st.slider(
             "Brush Width", min_value=8, max_value=36, value=20, step=2,
-            key="mnist_stroke_width",
+            key="mnist_brush_width",
         )
 
         canvas_result = st_canvas(
-            fill_color="rgba(0, 0, 0, 0)",
-            stroke_width=stroke_width,
+            fill_color="rgba(255, 165, 0, 0.3)",
+            stroke_width=brush_width,
             stroke_color="#FFFFFF",
             background_color="#000000",
-            width=280,
             height=280,
+            width=280,
             drawing_mode="freedraw",
-            display_toolbar=True,
-            key="mnist_canvas",
+            key="mnist_digit_canvas",
         )
 
-        classify_clicked = st.button("Classify Drawing", type="primary", use_container_width=True)
+        st.button("Classify Drawing", type="primary", use_container_width=True)
 
         # Preprocess and show thumbnail
         processed = preprocess_canvas_image(canvas_result)
@@ -827,12 +830,21 @@ def main():
         unsafe_allow_html=True,
     )
 
-    tab1, tab2 = st.tabs(["2D Decision Boundaries", "Handwritten Digit Recognition"])
+    selected_tab = st.segmented_control(
+        "Studio Navigation",
+        options=["2D Decision Boundaries", "Handwritten Digit Recognition"],
+        default="2D Decision Boundaries",
+        label_visibility="collapsed",
+    )
+    if not selected_tab:
+        selected_tab = "2D Decision Boundaries"
 
-    with tab1:
+    if selected_tab == "2D Decision Boundaries":
         render_decision_boundary_tab()
-
-    with tab2:
+    else:
+        with st.sidebar:
+            st.markdown("### MNIST Inference Mode")
+            st.info("The pre-trained model (`mnist_mlp.ng`) is loaded. Draw on the canvas to evaluate.")
         render_mnist_inference_tab()
 
 
