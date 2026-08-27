@@ -22,7 +22,6 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import streamlit as st
-import streamlit.components.v1 as components
 from PIL import Image
 
 from numpygrad.core.tensor import Tensor, no_grad
@@ -228,19 +227,21 @@ st.markdown(
         color: #FFFFFF !important;
     }
 
-    /* 1. Hide the Download / Save icon */
-    div[data-testid="stDrawableCanvas"] button:first-child,
-    div[data-testid="stDrawableCanvas"] button[title*="Download"] {
-        display: none !important;
+    /* Center the drawable canvas container relative to column and buttons */
+    div[data-testid="stElementContainer"]:has(iframe[title*="drawable_canvas"]),
+    div.stElementContainer:has(iframe[title*="drawable_canvas"]) {
+        display: flex !important;
+        justify-content: center !important;
     }
-
-    /* 2. Force Undo, Redo, and Trash icons to render bright white */
-    div[data-testid="stDrawableCanvas"] button {
-        background: transparent !important;
-        border: none !important;
-        filter: invert(1) brightness(2) contrast(1.5) !important;
-        opacity: 0.95 !important;
-        cursor: pointer !important;
+    iframe[data-testid="stCustomComponentV1"][title*="drawable_canvas"],
+    iframe[title*="drawable_canvas"] {
+        width: 284px !important;
+        height: 284px !important;
+        display: block !important;
+        margin: 0 auto 0.5rem auto !important;
+        border: 2px solid #3B4252 !important;
+        border-radius: 8px !important;
+        background-color: #000000 !important;
     }
     </style>
     """,
@@ -751,16 +752,33 @@ def render_mnist_inference_tab():
         return
 
     # Layout: canvas on left, results on right
-    col_canvas, col_results = st.columns([1, 1.4], gap="large")
+    col_canvas, col_results = st.columns(2, gap="large")
 
     with col_canvas:
         st.subheader("Drawing Canvas")
+
+        # State Management for Undo/Redo/Clear
+        if "canvas_key" not in st.session_state:
+            st.session_state["canvas_key"] = 0
+        if "stroke_history" not in st.session_state:
+            st.session_state["stroke_history"] = []
+        if "redo_stack" not in st.session_state:
+            st.session_state["redo_stack"] = []
+        if "needs_sync" not in st.session_state:
+            st.session_state["needs_sync"] = False
 
         # Canvas controls
         brush_width = st.slider(
             "Brush Width", min_value=8, max_value=36, value=20, step=2,
             key="mnist_brush_width",
         )
+
+        # Only pass initial_drawing when an explicit Undo/Redo/Clear action was triggered
+        if st.session_state.get("needs_sync", False) and st.session_state.get("stroke_history"):
+            init_data = {"objects": st.session_state["stroke_history"]}
+        else:
+            init_data = None
+        st.session_state["needs_sync"] = False
 
         canvas_result = st_canvas(
             fill_color="rgba(255, 165, 0, 0.3)",
@@ -770,72 +788,43 @@ def render_mnist_inference_tab():
             height=280,
             width=280,
             drawing_mode="freedraw",
-            display_toolbar=True,
-            key="mnist_digit_canvas",
+            display_toolbar=False,
+            initial_drawing=init_data,
+            key=f"mnist_canvas_{st.session_state.get('canvas_key', 0)}",
         )
 
-        components.html(
-            """
-            <script>
-            function styleCanvasButtons() {
-                try {
-                    const iframes = window.parent.document.querySelectorAll('iframe');
-                    iframes.forEach(iframe => {
-                        try {
-                            const doc = iframe.contentDocument || iframe.contentWindow.document;
-                            if (doc && doc.querySelector('canvas')) {
-                                let style = doc.getElementById('canvas-custom-toolbar-style');
-                                if (!style) {
-                                    style = doc.createElement('style');
-                                    style.id = 'canvas-custom-toolbar-style';
-                                    doc.head.appendChild(style);
-                                }
-                                style.innerHTML = `
-                                    /* 1. Hide the Download / Save button completely */
-                                    button:first-child,
-                                    button[title*="Download"],
-                                    button[title*="download"],
-                                    .button-download {
-                                        display: none !important;
-                                    }
+        # Track stroke history without feeding back during standard drawing
+        if canvas_result is not None and canvas_result.json_data is not None and "objects" in canvas_result.json_data:
+            current_objects = canvas_result.json_data["objects"]
+            if current_objects != st.session_state.get("stroke_history"):
+                st.session_state["stroke_history"] = current_objects
+                st.session_state["redo_stack"] = []
 
-                                    /* 2. Style Undo, Redo, and Trash buttons */
-                                    button {
-                                        background-color: #2D3139 !important;
-                                        border: 1px solid #4E5569 !important;
-                                        border-radius: 6px !important;
-                                        margin: 4px 4px !important;
-                                        padding: 6px 10px !important;
-                                        cursor: pointer !important;
-                                        opacity: 1 !important;
-                                    }
-                                    button:hover {
-                                        background-color: #3E4452 !important;
-                                        border-color: #70788C !important;
-                                    }
-
-                                    /* 3. Force the icons to be bright white */
-                                    button svg,
-                                    button svg path {
-                                        fill: #FFFFFF !important;
-                                        stroke: #FFFFFF !important;
-                                        color: #FFFFFF !important;
-                                    }
-                                `;
-                            }
-                        } catch (err) {
-                            // Ignore cross-origin access attempts on other frames
-                        }
-                    });
-                } catch (e) {}
-            }
-            // Run continuously to handle Streamlit re-renders
-            setInterval(styleCanvasButtons, 100);
-            </script>
-            """,
-            height=0,
-            width=0,
-        )
+        # Native Action Buttons Row
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            if st.button("Undo", use_container_width=True):
+                if st.session_state.get("stroke_history"):
+                    popped = st.session_state["stroke_history"].pop()
+                    st.session_state.setdefault("redo_stack", []).append(popped)
+                    st.session_state["canvas_key"] = st.session_state.get("canvas_key", 0) + 1
+                    st.session_state["needs_sync"] = True
+                    st.rerun()
+        with c2:
+            if st.button("Redo", use_container_width=True):
+                if st.session_state.get("redo_stack"):
+                    restored = st.session_state["redo_stack"].pop()
+                    st.session_state.setdefault("stroke_history", []).append(restored)
+                    st.session_state["canvas_key"] = st.session_state.get("canvas_key", 0) + 1
+                    st.session_state["needs_sync"] = True
+                    st.rerun()
+        with c3:
+            if st.button("Clear", use_container_width=True):
+                st.session_state["stroke_history"] = []
+                st.session_state["redo_stack"] = []
+                st.session_state["canvas_key"] = st.session_state.get("canvas_key", 0) + 1
+                st.session_state["needs_sync"] = True
+                st.rerun()
 
         # Preprocess and show thumbnail
         processed = preprocess_canvas_image(canvas_result)
