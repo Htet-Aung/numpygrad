@@ -3,6 +3,10 @@ NumPyGrad Interactive Deep Learning & Autograd Studio.
 
 A pure NumPy automatic differentiation playground built with Streamlit.
 Zero external deep learning framework dependencies.
+
+Tabs:
+  1. 2D Decision Boundaries - Live contour training on synthetic datasets.
+  2. Handwritten Digit Recognition - Interactive MNIST canvas inference.
 """
 
 import sys
@@ -18,11 +22,13 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import streamlit as st
+from PIL import Image
 
-from numpygrad.core.tensor import Tensor
+from numpygrad.core.tensor import Tensor, no_grad
 import numpygrad.nn as nn
 import numpygrad.optim as optim
 from numpygrad.utils.data import TensorDataset, DataLoader
+from numpygrad.serialization import load_model
 
 
 # -----------------------------------------------------------------------------
@@ -149,6 +155,55 @@ st.markdown(
     }
     div[data-testid="stVerticalBlock"] > div {
         gap: 0.4rem !important;
+    }
+
+    /* Prediction callout card */
+    .prediction-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 12px;
+        padding: 24px 20px;
+        text-align: center;
+        margin-bottom: 12px;
+    }
+    .prediction-digit {
+        font-size: 4.5rem;
+        font-weight: 800;
+        line-height: 1.1;
+        margin: 0;
+    }
+    .prediction-confidence {
+        font-size: 1.3rem;
+        font-weight: 600;
+        opacity: 0.95;
+        margin-top: 4px;
+    }
+    .prediction-label {
+        font-size: 0.85rem;
+        opacity: 0.8;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 4px;
+    }
+
+    /* Top-3 ranking cards */
+    .rank-card {
+        background-color: #f8f9fa;
+        border: 1px solid #e9ecef;
+        border-radius: 8px;
+        padding: 10px 14px;
+        text-align: center;
+    }
+    .rank-digit {
+        font-size: 1.6rem;
+        font-weight: 700;
+        margin: 0;
+        line-height: 1.2;
+    }
+    .rank-prob {
+        font-size: 0.9rem;
+        color: #6c757d;
+        margin: 0;
     }
     </style>
     """,
@@ -363,16 +418,131 @@ def plot_gradient_norms(model: nn.Module) -> plt.Figure:
 
 
 # -----------------------------------------------------------------------------
-# Main Application UI
+# MNIST Canvas Preprocessing Pipeline
 # -----------------------------------------------------------------------------
 
-def main():
-    st.markdown('<div class="main-header">NumPyGrad Interactive Studio</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="sub-header">A Pure NumPy Dynamic Computational Graph & Deep Learning Playground with Zero External DL Frameworks</div>',
-        unsafe_allow_html=True,
-    )
+def preprocess_canvas_image(canvas_result) -> np.ndarray | None:
+    """
+    Extracts, centers, and normalizes a drawn digit from the Streamlit canvas
+    into a (1, 28, 28) float32 array matching MNIST preprocessing conventions.
 
+    Returns None if the canvas is blank.
+    """
+    if canvas_result is None or canvas_result.image_data is None:
+        return None
+
+    img_data = canvas_result.image_data  # (H, W, 4) RGBA uint8
+
+    # Extract the alpha channel (white stroke on black background)
+    alpha = img_data[:, :, 3].astype(np.float32)
+
+    # Check if canvas is blank
+    if alpha.max() < 10.0:
+        return None
+
+    # Binarize with a low threshold to capture strokes
+    mask = alpha > 15.0
+
+    # Find bounding box of drawn content
+    rows = np.any(mask, axis=1)
+    cols = np.any(mask, axis=0)
+    rmin, rmax = np.where(rows)[0][[0, -1]]
+    cmin, cmax = np.where(cols)[0][[0, -1]]
+
+    # Crop to bounding box
+    cropped = alpha[rmin:rmax + 1, cmin:cmax + 1]
+
+    # Pad to square with aspect ratio preservation
+    h, w = cropped.shape
+    max_side = max(h, w)
+
+    # Add proportional margin (20% of the max side, matching MNIST convention)
+    margin = int(max_side * 0.2)
+    padded_size = max_side + 2 * margin
+
+    padded = np.zeros((padded_size, padded_size), dtype=np.float32)
+    y_offset = (padded_size - h) // 2
+    x_offset = (padded_size - w) // 2
+    padded[y_offset:y_offset + h, x_offset:x_offset + w] = cropped
+
+    # Resize to 28x28 using PIL LANCZOS resampling
+    pil_img = Image.fromarray(padded.astype(np.uint8), mode="L")
+    pil_img = pil_img.resize((28, 28), Image.Resampling.LANCZOS)
+    img_28 = np.array(pil_img, dtype=np.float32)
+
+    # Center of mass shift (standard MNIST preprocessing)
+    # Compute center of mass and shift so it aligns to center (14, 14)
+    total_mass = img_28.sum()
+    if total_mass > 0:
+        gy, gx = np.mgrid[0:28, 0:28]
+        cy = (gy * img_28).sum() / total_mass
+        cx = (gx * img_28).sum() / total_mass
+        shift_y = int(round(14.0 - cy))
+        shift_x = int(round(14.0 - cx))
+
+        # Apply shift via roll (with zero-fill at edges)
+        shifted = np.zeros_like(img_28)
+        src_y_start = max(0, -shift_y)
+        src_y_end = min(28, 28 - shift_y)
+        src_x_start = max(0, -shift_x)
+        src_x_end = min(28, 28 - shift_x)
+        dst_y_start = max(0, shift_y)
+        dst_y_end = min(28, 28 + shift_y)
+        dst_x_start = max(0, shift_x)
+        dst_x_end = min(28, 28 + shift_x)
+        shifted[dst_y_start:dst_y_end, dst_x_start:dst_x_end] = img_28[src_y_start:src_y_end, src_x_start:src_x_end]
+        img_28 = shifted
+
+    # Normalize to [0.0, 1.0]
+    img_28 = img_28 / 255.0
+
+    # Reshape to (1, 28, 28) batch tensor
+    return img_28.reshape(1, 28, 28)
+
+
+def stable_softmax(logits: np.ndarray) -> np.ndarray:
+    """Numerically stable softmax using the Log-Sum-Exp trick."""
+    shifted = logits - np.max(logits, axis=-1, keepdims=True)
+    exp_vals = np.exp(shifted)
+    return exp_vals / np.sum(exp_vals, axis=-1, keepdims=True)
+
+
+def plot_probability_distribution(probs: np.ndarray) -> plt.Figure:
+    """Creates a horizontal bar chart of class probabilities 0-9."""
+    fig, ax = plt.subplots(figsize=(5, 3.5), dpi=120)
+    classes = np.arange(10)
+    colors = ["#667eea" if p < np.max(probs) else "#764ba2" for p in probs]
+
+    bars = ax.barh(classes, probs * 100, color=colors, edgecolor="white", linewidth=0.5, height=0.7)
+    ax.set_yticks(classes)
+    ax.set_yticklabels([str(c) for c in classes], fontsize=11, fontweight="bold")
+    ax.set_xlabel("Probability (%)", fontweight="bold", fontsize=10)
+    ax.set_title("Class Probability Distribution", fontsize=11, fontweight="bold")
+    ax.set_xlim(0, 105)
+    ax.invert_yaxis()
+    ax.grid(True, linestyle=":", alpha=0.4, axis="x")
+
+    for bar, p in zip(bars, probs):
+        if p > 0.01:
+            ax.text(
+                bar.get_width() + 1.0,
+                bar.get_y() + bar.get_height() / 2,
+                f"{p * 100:.1f}%",
+                va="center",
+                fontsize=9,
+                fontweight="bold",
+            )
+
+    plt.tight_layout()
+    return fig
+
+
+# -----------------------------------------------------------------------------
+# Tab 1: 2D Decision Boundaries
+# -----------------------------------------------------------------------------
+
+def render_decision_boundary_tab():
+    """Renders the 2D Decision Boundary training studio."""
     # ---------------- Sidebar Controls ----------------
     with st.sidebar:
         st.header("Experiment Controls")
@@ -508,6 +678,152 @@ def main():
             fig_grad = plot_gradient_norms(model)
             st.pyplot(fig_grad)
             plt.close(fig_grad)
+
+
+# -----------------------------------------------------------------------------
+# Tab 2: Handwritten Digit Recognition
+# -----------------------------------------------------------------------------
+
+@st.cache_resource
+def load_mnist_model():
+    """Loads the pre-trained MNIST MLP model from the .ng artifact."""
+    model_path = os.path.join(os.path.dirname(__file__), "..", "examples", "mnist_mlp.ng")
+    model_path = os.path.abspath(model_path)
+
+    if not os.path.exists(model_path):
+        return None
+
+    model = load_model(model_path)
+    model.eval()
+    return model
+
+
+def render_mnist_inference_tab():
+    """Renders the Handwritten Digit Recognition inference studio."""
+    from streamlit_drawable_canvas import st_canvas
+
+    st.markdown(
+        "Draw a single digit (0-9) on the canvas below. "
+        "The pre-trained MNIST MLP model will classify your handwriting in real time."
+    )
+
+    # Load model
+    model = load_mnist_model()
+    if model is None:
+        st.error(
+            "Pre-trained MNIST model not found at `examples/mnist_mlp.ng`. "
+            "Run `python examples/train_mnist_mlp.py` first to train and save the model."
+        )
+        return
+
+    # Layout: canvas on left, results on right
+    col_canvas, col_results = st.columns([1, 1.4], gap="large")
+
+    with col_canvas:
+        st.subheader("Drawing Canvas")
+
+        # Canvas controls
+        stroke_width = st.slider(
+            "Brush Width", min_value=8, max_value=36, value=20, step=2,
+            key="mnist_stroke_width",
+        )
+
+        canvas_result = st_canvas(
+            fill_color="rgba(0, 0, 0, 0)",
+            stroke_width=stroke_width,
+            stroke_color="#FFFFFF",
+            background_color="#000000",
+            width=280,
+            height=280,
+            drawing_mode="freedraw",
+            display_toolbar=True,
+            key="mnist_canvas",
+        )
+
+        # Preprocess and show thumbnail
+        processed = preprocess_canvas_image(canvas_result)
+
+        if processed is not None:
+            st.subheader("Preprocessed Input (28x28)")
+            # Scale up for visibility
+            preview = (processed[0] * 255).astype(np.uint8)
+            preview_img = Image.fromarray(preview, mode="L")
+            preview_img = preview_img.resize((140, 140), Image.Resampling.NEAREST)
+            st.image(preview_img, caption="Normalized and centered", width=140)
+
+    with col_results:
+        if processed is not None:
+            # Run inference
+            input_tensor = Tensor(processed.astype(np.float32), requires_grad=False)
+
+            with no_grad():
+                logits = model(input_tensor)
+
+            probs = stable_softmax(logits.data[0])
+            predicted_class = int(np.argmax(probs))
+            confidence = float(probs[predicted_class])
+
+            # Top-3 predictions
+            top3_indices = np.argsort(probs)[::-1][:3]
+
+            # Prediction callout card
+            st.markdown(
+                f"""
+                <div class="prediction-card">
+                    <p class="prediction-label">Predicted Digit</p>
+                    <p class="prediction-digit">{predicted_class}</p>
+                    <p class="prediction-confidence">{confidence * 100:.1f}% Confidence</p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            # Top-3 ranking cards
+            st.subheader("Top-3 Predictions")
+            rank_cols = st.columns(3)
+            rank_labels = ["1st", "2nd", "3rd"]
+            for i, col in enumerate(rank_cols):
+                idx = top3_indices[i]
+                p = probs[idx]
+                with col:
+                    st.markdown(
+                        f"""
+                        <div class="rank-card">
+                            <p style="font-size:0.75rem;color:#6c757d;margin:0;">{rank_labels[i]}</p>
+                            <p class="rank-digit">{idx}</p>
+                            <p class="rank-prob">{p * 100:.1f}%</p>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+
+            # Full probability distribution bar chart
+            st.subheader("Probability Distribution")
+            fig_probs = plot_probability_distribution(probs)
+            st.pyplot(fig_probs)
+            plt.close(fig_probs)
+        else:
+            st.info("Draw a digit on the canvas to see the model prediction.")
+
+
+# -----------------------------------------------------------------------------
+# Main Application UI
+# -----------------------------------------------------------------------------
+
+def main():
+    st.markdown('<div class="main-header">NumPyGrad Interactive Studio</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="sub-header">A Pure NumPy Dynamic Computational Graph & Deep Learning Playground with Zero External DL Frameworks</div>',
+        unsafe_allow_html=True,
+    )
+
+    tab1, tab2 = st.tabs(["2D Decision Boundaries", "Handwritten Digit Recognition"])
+
+    with tab1:
+        render_decision_boundary_tab()
+
+    with tab2:
+        render_mnist_inference_tab()
 
 
 if __name__ == "__main__":

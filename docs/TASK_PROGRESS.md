@@ -17,7 +17,7 @@ This document tracks development progress across the milestones for evolving **N
 | **Milestone 2** | Model Persistence & Serialization (`save_model`, `load_model`, `.save()`, `.ng` container) | `[DONE]` |
 | **Milestone 3** | Real Tabular Classification - Iris (`accuracy`, `confusion_matrix`, training & persistence) | `[DONE]` |
 | **Milestone 4** | Flagship MNIST Training (`Flatten`, training pipeline, >=95% accuracy, persistence) | `[DONE]` |
-| **Milestone 5** | Advanced Tensor Operations & Math (Slicing, Advanced Indexing, Clamping) | `[TODO]` |
+| **Milestone 5** | Interactive MNIST Inference (Streamlit canvas, digit recognition, model reload) | `[DONE]` |
 | **Milestone 6** | Additional Neural Network Layers & Containers (`Conv2D`, `MaxPool2d`, `LayerNorm`) | `[TODO]` |
 | **Milestone 7** | Advanced Loss Functions & Evaluation Metrics (`NLLLoss`, `SmoothL1Loss`, F1 Score) | `[TODO]` |
 | **Milestone 8** | Learning Rate Schedulers (`StepLR`, `CosineAnnealingLR`, `ExponentialLR`) | `[TODO]` |
@@ -69,7 +69,13 @@ This document tracks development progress across the milestones for evolving **N
 
 ---
 
-### Milestone 5: Advanced Tensor Operations & Math
+### Milestone 5: Interactive MNIST Inference
+- [x] Refactor `app/app.py` to use `st.tabs` with multi-tab layout `[DONE]`
+- [x] Implement 280x280 drawable canvas with MNIST digit preprocessing pipeline `[DONE]`
+- [x] Auto-load `examples/mnist_mlp.ng` model and run inference under `no_grad` `[DONE]`
+- [x] Display predicted digit, confidence, top-3 rankings, full probability bar chart `[DONE]`
+- [x] Display 28x28 preprocessed input preview thumbnail `[DONE]`
+- [x] Verify `streamlit run app/app.py` runs cleanly `[DONE]`
 
 ---
 
