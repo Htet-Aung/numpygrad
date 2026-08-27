@@ -3,16 +3,28 @@
 [![Release](https://img.shields.io/badge/Release-v1.0.0-blue.svg)](https://github.com/Htet-Aung/numpygrad)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![Zero DL Frameworks](https://img.shields.io/badge/Dependencies-Pure%20NumPy-brightgreen.svg)](#)
+[![Dependencies](https://img.shields.io/badge/Dependencies-Pure%20NumPy-brightgreen.svg)](#)
 [![Tests: 129/129 Passed](https://img.shields.io/badge/Tests-129%2F129%20Passed-success.svg)](#)
 
-A modular, production-ready, educational deep learning library and dynamic tensor automatic differentiation engine built completely from scratch using **pure Python and NumPy**—with **zero external deep learning framework dependencies** (no PyTorch, JAX, TensorFlow, or Keras).
+A transparent, educational deep learning library and dynamic tensor automatic differentiation engine built from scratch using **pure Python and NumPy**—with **zero external deep learning framework dependencies** (no PyTorch, JAX, TensorFlow, or Keras).
+
+---
+
+## Purpose & Philosophy
+
+NumPyGrad was created as a bottom-up exploration into the mathematical and architectural foundations of modern deep learning frameworks. By building an autograd engine and neural network abstractions with only Python and standard NumPy arrays, every matrix operation, gradient accumulation hook, and graph traversal step remains completely visible and debuggable.
+
+### Non-Goals
+To maintain simplicity and educational clarity, NumPyGrad deliberately avoids:
+- **GPU / CUDA acceleration:** Execution is strictly CPU-bound to prioritize clean, readable NumPy code over hardware-specific CUDA kernels.
+- **Distributed training:** Designed for single-machine execution, rapid experimentation, and conceptual clarity.
+- **Production framework replacement:** NumPyGrad is a learning artifact and portfolio project, not a competitor to industrial engines like PyTorch or JAX.
 
 ---
 
 ## Visual Showcase: Non-Linear Decision Boundary
 
-NumPyGrad easily trains deep multi-layer perceptrons to resolve complex non-linear classification manifolds (e.g. Two Moons, Concentric Circles, Spirals) via topological reverse-mode backpropagation and AdamW optimization:
+NumPyGrad trains multi-layer perceptrons to resolve complex non-linear classification manifolds (e.g. Two Moons, Concentric Circles, Spirals) via topological reverse-mode backpropagation and AdamW optimization:
 
 <p align="center">
   <img src="examples/decision_boundary.png" alt="NumPyGrad Decision Boundary & Convergence Curves" width="850"/>
@@ -20,14 +32,14 @@ NumPyGrad easily trains deep multi-layer perceptrons to resolve complex non-line
 
 ---
 
-## Key Highlights
+## Key Features
 
 - **Dynamic Computational DAG:** Reverse-mode automatic differentiation over dynamically constructed Directed Acyclic Graphs with depth-first topological traversal.
-- **PyTorch-Parity Modular Architecture:** `Module`, `Parameter`, `Linear`, `Conv2D`, `MaxPool2D`, `BatchNorm1d`, `Dropout`, `Flatten`, `Sequential`, and non-linear activations (`ReLU`, `Tanh`, `Sigmoid`, `GELU`).
-- **Vectorized Spatial Convolutions:** Fast 2D convolution and max pooling utilizing `im2col` matrix unfolding and analytical `col2im` gradient projection in pure NumPy.
-- **Dataset & DataLoader Pipeline:** Pythonic data loading with multi-tensor datasets, mini-batch slicing, deterministic shuffling, and remainder batch policies.
+- **PyTorch-Style Modular Architecture:** `Module`, `Parameter`, `Linear`, `Conv2D`, `MaxPool2D`, `BatchNorm1d`, `Dropout`, `Flatten`, `Sequential`, and non-linear activations (`ReLU`, `Tanh`, `Sigmoid`, `GELU`).
+- **Vectorized Spatial Convolutions:** 2D convolution and max pooling utilizing `im2col` matrix unfolding and analytical `col2im` gradient projection in pure NumPy.
+- **Dataset & DataLoader Pipeline:** Clean data loading with multi-tensor datasets, mini-batch slicing, deterministic shuffling, and remainder batch policies.
 - **Execution Modes & Autograd Guards:** Recursive `model.train()` and `model.eval()` mode propagation, plus `no_grad()` context managers and decorators.
-- **Model Inspection & Diagnostics:** `model.summary(input_shape)` generating comprehensive ASCII reports with layer output shapes, parameter counts, and memory footprint estimations.
+- **Model Inspection & Diagnostics:** `model.summary(input_shape)` generating ASCII reports with layer output shapes, parameter counts, and memory footprint estimations.
 - **Single-File Model Persistence:** Native `.ng` container serialization (`save_model` / `load_model` / `model.save()`) packaging architecture topology and compressed weights.
 - **Interactive Streamlit Studio:** Multi-tab visualizer with real-time 2D decision boundary training and a live interactive MNIST handwritten digit drawing canvas.
 - **Mathematical Rigor:** 100% test coverage with centered finite-difference numerical gradient checks (`gradcheck` relative error $< 10^{-10}$).
@@ -179,20 +191,20 @@ streamlit run app/app.py
 
 ---
 
-## CPU Benchmark: NumPyGrad vs. PyTorch
+## CPU Micro-Benchmark: NumPy vs. PyTorch C++
 
-NumPyGrad achieves highly competitive CPU training throughput by minimizing Python object overhead and executing tight vectorized NumPy kernels:
+To explore how close pure vectorized NumPy operations can come to PyTorch's native C++ CPU backend on standard workloads, a micro-benchmark suite is included:
 
 ```bash
 python benchmarks/benchmark_cpu.py
 ```
 
-| Framework | Workload (3-Layer MLP, B=128) | Step Latency (Fwd + Bwd) | Training Throughput |
+| Framework | Implementation (3-Layer MLP, B=128) | Step Latency (Fwd + Bwd) | Training Throughput |
 |---|---|---|---|
-| **NumPyGrad** | Pure NumPy CPU | **2.21 ms** | **~58,000 samples/sec** |
-| **PyTorch** | Native C++ CPU LibTorch | **1.85 ms** | **~69,000 samples/sec** |
+| **NumPyGrad** | Pure NumPy / Python CPU | **2.21 ms** | **~58,000 samples/sec** |
+| **PyTorch** | Native C++ CPU (LibTorch) | **1.85 ms** | **~69,000 samples/sec** |
 
-*NumPyGrad delivers ~84% of PyTorch's native C++ CPU throughput while maintaining 100% pure Python/NumPy transparency.*
+*Note: This benchmark highlights that with careful vectorization and minimal object allocations, Python + NumPy can achieve respectable CPU throughput on moderate batch sizes without compiled C++ extensions.*
 
 ---
 

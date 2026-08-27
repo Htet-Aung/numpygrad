@@ -1,6 +1,6 @@
 # Task Progress Tracker: NumPyGrad
 
-This document tracks development progress across all phases and milestones for **NumPyGrad**, a lightweight, modular deep learning and automatic differentiation framework in pure Python and NumPy.
+This document tracks development progress across all phases and milestones for **NumPyGrad**, an educational from-scratch deep learning and automatic differentiation framework built with pure Python and NumPy.
 
 **Status Markers**:
 - `[TODO]` - Not started

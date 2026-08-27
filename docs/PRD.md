@@ -2,15 +2,21 @@
 
 ## 1. Executive Summary & Objective
 
-**NumPyGrad** is a lightweight, pure Python and NumPy automatic differentiation and deep learning framework built entirely from scratch with zero external deep learning framework dependencies (no PyTorch, JAX, TensorFlow, or Keras). 
+**NumPyGrad** is a lightweight, educational Python and NumPy automatic differentiation and deep learning framework built from scratch with zero external deep learning framework dependencies (no PyTorch, JAX, TensorFlow, or Keras). 
 
-The primary objective is to build an educational yet mathematically rigorous tensor library featuring:
+The primary objective is to create an open, readable, and mathematically rigorous tensor library to explore:
 - A dynamic computation graph (DAG) evaluated via reverse-mode automatic differentiation (topological backpropagation).
-- Broadcasting-aware analytical gradient accumulation across arbitrary tensor shapes and dimensions.
+- Broadcasting-aware analytical gradient accumulation across arbitrary tensor shapes and dimensions (`_unbroadcast`).
 - A PyTorch-inspired object-oriented API for neural network modules, parameters, layers, spatial convolutions, activation functions, loss criteria, and optimizers.
 - Numerical gradient verification (`gradcheck`) using centered finite differences to guarantee mathematical precision.
 - Single-file container model serialization (`.ng` format) packaging topology and compressed weight arrays.
-- Interactive multi-tab web studio for real-time 2D decision boundary training and live handwritten digit recognition.
+- An interactive multi-tab web studio for visual exploration of 2D decision boundaries and live handwritten digit recognition.
+
+### 1.1 Scope & Deliberate Non-Goals
+- **Educational Exploration First:** The project exists to demystify autograd and backpropagation by keeping every tensor calculation and closure in plain, readable NumPy.
+- **No GPU / CUDA Hardware Acceleration:** Execution is strictly CPU-bound to avoid platform-dependent CUDA complexity.
+- **No Distributed Scaling:** Built for single-machine conceptual understanding and experimentation.
+- **Not a Production Framework Replacement:** Designed for inspection, learning, and teaching rather than industrial-scale training.
 
 ---
 
