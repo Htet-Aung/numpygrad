@@ -2671,14 +2671,33 @@ def render_neural_pathfinding_tab():
         st.header("Rover Navigation Controls")
         st.subheader("1. Route Waypoints")
 
-        # Auto-Detect Safe Route button
-        if st.button("Auto-Detect Safe Route", width="stretch", key="btn_auto_safe_route", help="Queries the active neural network to discover valid Start and Target waypoints in free space (P < 0.20)."):
-            if active_eval_model is not None:
-                auto_s, auto_t = find_safe_waypoints(active_eval_model)
-                st.session_state["rover_start_x1"] = auto_s[0]
-                st.session_state["rover_start_x2"] = auto_s[1]
-                st.session_state["rover_target_x1"] = auto_t[0]
-                st.session_state["rover_target_x2"] = auto_t[1]
+        # Action buttons
+        col_act1, col_act2 = st.columns(2)
+        with col_act1:
+            if st.button("Auto-Detect Route", width="stretch", key="btn_auto_safe_route", help="Queries the neural network to discover optimal Start and Target waypoints in free space (P < 0.20)."):
+                if active_eval_model is not None:
+                    auto_s, auto_t = find_safe_waypoints(active_eval_model)
+                    st.session_state["rover_start_x1"] = auto_s[0]
+                    st.session_state["rover_start_x2"] = auto_s[1]
+                    st.session_state["rover_target_x1"] = auto_t[0]
+                    st.session_state["rover_target_x2"] = auto_t[1]
+                    st.session_state.pop("rover_sim", None)
+                    st.session_state.pop("rover_sim_a", None)
+                    st.session_state.pop("rover_sim_b", None)
+                    st.rerun()
+        with col_act2:
+            if st.button("Invert Route", width="stretch", key="btn_swap_route", help="Swaps Start (S) and Target (T)."):
+                sx1 = st.session_state.get("rover_start_x1", -1.80)
+                sx2 = st.session_state.get("rover_start_x2", 1.20)
+                tx1 = st.session_state.get("rover_target_x1", 1.20)
+                tx2 = st.session_state.get("rover_target_x2", 0.70)
+                st.session_state["rover_start_x1"] = tx1
+                st.session_state["rover_start_x2"] = tx2
+                st.session_state["rover_target_x1"] = sx1
+                st.session_state["rover_target_x2"] = sx2
+                st.session_state.pop("rover_sim", None)
+                st.session_state.pop("rover_sim_a", None)
+                st.session_state.pop("rover_sim_b", None)
                 st.rerun()
 
         # Preset routes
@@ -2690,12 +2709,20 @@ def render_neural_pathfinding_tab():
                 st.session_state["rover_start_x2"] = 1.20
                 st.session_state["rover_target_x1"] = 1.20
                 st.session_state["rover_target_x2"] = 0.70
+                st.session_state.pop("rover_sim", None)
+                st.session_state.pop("rover_sim_a", None)
+                st.session_state.pop("rover_sim_b", None)
+                st.rerun()
         with preset_cols[1]:
             if st.button("Moon Channel", width="stretch", key="preset_moon_channel"):
                 st.session_state["rover_start_x1"] = -1.50
                 st.session_state["rover_start_x2"] = 0.80
                 st.session_state["rover_target_x1"] = 0.80
                 st.session_state["rover_target_x2"] = -0.20
+                st.session_state.pop("rover_sim", None)
+                st.session_state.pop("rover_sim_a", None)
+                st.session_state.pop("rover_sim_b", None)
+                st.rerun()
 
         preset_cols_2 = st.columns(2)
         with preset_cols_2[0]:
@@ -2704,12 +2731,20 @@ def render_neural_pathfinding_tab():
                 st.session_state["rover_start_x2"] = 0.00
                 st.session_state["rover_target_x1"] = 1.80
                 st.session_state["rover_target_x2"] = 0.00
+                st.session_state.pop("rover_sim", None)
+                st.session_state.pop("rover_sim_a", None)
+                st.session_state.pop("rover_sim_b", None)
+                st.rerun()
         with preset_cols_2[1]:
             if st.button("Spiral Run", width="stretch", key="preset_spiral_run"):
                 st.session_state["rover_start_x1"] = -1.80
                 st.session_state["rover_start_x2"] = -1.80
                 st.session_state["rover_target_x1"] = 1.80
                 st.session_state["rover_target_x2"] = 1.80
+                st.session_state.pop("rover_sim", None)
+                st.session_state.pop("rover_sim_a", None)
+                st.session_state.pop("rover_sim_b", None)
+                st.rerun()
 
         start_x1 = st.slider("Start Position x1", -2.4, 2.4, st.session_state.get("rover_start_x1", -1.80), 0.05, key="rover_start_x1")
         start_x2 = st.slider("Start Position x2", -2.4, 2.4, st.session_state.get("rover_start_x2", 1.20), 0.05, key="rover_start_x2")
@@ -2727,9 +2762,9 @@ def render_neural_pathfinding_tab():
                 target_haz = float(probs_p[1, 1])
 
             if target_haz > 0.50:
-                st.warning(f"Target is inside an obstacle zone ({target_haz*100:.1f}% hazard). Use 'Auto-Detect Safe Route' to snap to open space.")
+                st.warning(f"Target is inside an obstacle zone ({target_haz*100:.1f}% hazard). Use 'Auto-Detect Route' to snap to open space.")
             if start_haz > 0.50:
-                st.warning(f"Start is inside an obstacle zone ({start_haz*100:.1f}% hazard). Use 'Auto-Detect Safe Route' to snap to open space.")
+                st.warning(f"Start is inside an obstacle zone ({start_haz*100:.1f}% hazard). Use 'Auto-Detect Route' to snap to open space.")
 
         with st.expander("Physical Simulation Tuning", expanded=True):
             step_size = st.slider("Step Size (Speed)", 0.04, 0.25, 0.12, 0.01, key="rover_step_size")
@@ -2815,42 +2850,23 @@ def render_neural_pathfinding_tab():
             help="Scrub through the rover's trajectory to inspect position, heading, and sensor radar rays at each individual step.",
         )
 
-        # Placement Mode Selector & Waypoint Safety Validation
-        col_mode_sel, col_mode_stat = st.columns([1, 1])
-        with col_mode_sel:
-            waypoint_mode = st.radio(
-                "Interactive Map Click Sets:",
-                ["Start Point (S)", "Target Point (T)"],
-                horizontal=True,
-                key="rover_waypoint_click_mode",
-                help="Click anywhere on the 2D contour map to reposition the selected waypoint.",
-            )
-        with col_mode_stat:
-            if active_eval_model is not None:
-                if target_haz > 0.50 or start_haz > 0.50:
-                    st.warning("Warning: Waypoint is inside an obstacle zone! Click open blue space or use 'Auto-Detect Safe Route'.")
-                else:
-                    st.success("Waypoints Active: Both Start and Target are positioned in safe free space.")
+        # ---------------- Telemetry Dashboard ----------------
+        m_stat, m_steps, m_dist, m_haz, m_inf = st.columns(5)
+        m_stat.metric("Mission Status", status_text, delta=status_delta, delta_color=status_delta_color)
+        m_steps.metric("Steps Taken", f"{steps_taken} / {max_steps}")
+        m_dist.metric("Path Distance", f"{path_len:.2f}")
+        m_haz.metric("Max Hazard", f"{max_hazard * 100:.1f}%", delta="Safe" if max_hazard <= 0.55 else "Breached", delta_color="normal" if max_hazard <= 0.55 else "inverse")
+        m_inf.metric("Forward Inferences", f"{total_inferences}")
 
-        def _cb_on_rover_plotly_select():
-            state = st.session_state.get("rover_plotly_map")
-            if isinstance(state, dict):
-                sel_pts = state.get("selection", {}).get("points", [])
-                if sel_pts:
-                    clicked_pt = sel_pts[0]
-                    if "x" in clicked_pt and "y" in clicked_pt:
-                        cx = float(np.round(clicked_pt["x"], 2))
-                        cy = float(np.round(clicked_pt["y"], 2))
-                        mode = st.session_state.get("rover_waypoint_click_mode", "Start Point (S)")
-                        if "Start" in mode:
-                            st.session_state["rover_start_x1"] = cx
-                            st.session_state["rover_start_x2"] = cy
-                        else:
-                            st.session_state["rover_target_x1"] = cx
-                            st.session_state["rover_target_x2"] = cy
-                        st.session_state.pop("rover_sim", None)
-                        st.session_state.pop("rover_sim_a", None)
-                        st.session_state.pop("rover_sim_b", None)
+        # Interactive Step Playback Scrubber
+        step_idx = st.slider(
+            "Inspect Simulation Step (Scrubber)",
+            min_value=0,
+            max_value=len(trajectory) - 1,
+            value=len(trajectory) - 1,
+            key="rover_step_slider",
+            help="Scrub through the rover's trajectory to inspect position, heading, and sensor radar rays at each individual step.",
+        )
 
         # Visual Simulation Plot & Diagnostics
         col_chart, col_details = st.columns([3, 2])
@@ -2868,34 +2884,12 @@ def render_neural_pathfinding_tab():
                     step_index=step_idx,
                     title=f"Rover Mission on {dataset_name} ({arch_str}) - Step {step_idx}/{len(trajectory)-1}",
                 )
-                chart_event = st.plotly_chart(
+                st.plotly_chart(
                     fig_rover,
-                    on_select=_cb_on_rover_plotly_select,
-                    selection_mode=["points"],
                     key="rover_plotly_map",
                     config={"displayModeBar": False, "scrollZoom": False},
                     width="stretch",
                 )
-                if chart_event and hasattr(chart_event, "selection") and chart_event.selection:
-                    sel_pts = chart_event.selection.get("points", [])
-                    if sel_pts:
-                        clicked_pt = sel_pts[0]
-                        if "x" in clicked_pt and "y" in clicked_pt:
-                            cx = float(np.round(clicked_pt["x"], 2))
-                            cy = float(np.round(clicked_pt["y"], 2))
-                            mode = st.session_state.get("rover_waypoint_click_mode", "Start Point (S)")
-                            if "Start" in mode:
-                                if st.session_state.get("rover_start_x1") != cx or st.session_state.get("rover_start_x2") != cy:
-                                    st.session_state["rover_start_x1"] = cx
-                                    st.session_state["rover_start_x2"] = cy
-                                    st.session_state.pop("rover_sim", None)
-                                    st.rerun()
-                            else:
-                                if st.session_state.get("rover_target_x1") != cx or st.session_state.get("rover_target_x2") != cy:
-                                    st.session_state["rover_target_x1"] = cx
-                                    st.session_state["rover_target_x2"] = cy
-                                    st.session_state.pop("rover_sim", None)
-                                    st.rerun()
             else:
                 fig_rover_mpl = plot_rover_path_mpl(model, X, y, trajectory[:step_idx+1], start_pos, target_pos)
                 st.pyplot(fig_rover_mpl)
@@ -2931,7 +2925,8 @@ def render_neural_pathfinding_tab():
             st.markdown(
                 "1. **Attractive Force ($v_{\\text{goal}}$):** Pulls the rover directly toward target destination coordinates.\n"
                 "2. **Sensory Ray-Casting:** Casts forward sensor probes querying the neural network under `no_grad()`.\n"
-                "3. **Repulsive Force ($v_{\\text{avoid}}$):** Repels the rover away from high-hazard obstacle terrain."
+                "3. **Repulsive Force ($v_{\\text{avoid}}$):** Repels the rover away from high-hazard obstacle terrain.\n"
+                "4. **Tangential Steering ($v_{\\text{tangent}}$):** Slides along obstacle contours to escape local minima."
             )
 
         # Step-by-Step Telemetry Table
@@ -3015,63 +3010,6 @@ def render_neural_pathfinding_tab():
             help="Scrub through both rovers simultaneously to observe decision boundary navigation side by side.",
         )
 
-        # Placement Mode Selector & Waypoint Safety Validation for Dual Model Race
-        col_mode_sel_d, col_mode_stat_d = st.columns([1, 1])
-        with col_mode_sel_d:
-            st.radio(
-                "Interactive Map Click Sets:",
-                ["Start Point (S)", "Target Point (T)"],
-                horizontal=True,
-                key="rover_waypoint_click_mode_dual",
-                help="Click on either model contour map to reposition Start (S) or Target (T).",
-            )
-        with col_mode_stat_d:
-            if active_eval_model is not None:
-                if target_haz > 0.50 or start_haz > 0.50:
-                    st.warning("Warning: Waypoint is inside an obstacle zone! Click open blue space or use 'Auto-Detect Safe Route'.")
-                else:
-                    st.success("Waypoints Active: Both Start and Target are positioned in safe free space.")
-
-        def _cb_on_rover_plotly_select_dual_a():
-            state = st.session_state.get("plotly_rover_a")
-            if isinstance(state, dict):
-                sel_pts = state.get("selection", {}).get("points", [])
-                if sel_pts:
-                    clicked_pt = sel_pts[0]
-                    if "x" in clicked_pt and "y" in clicked_pt:
-                        cx = float(np.round(clicked_pt["x"], 2))
-                        cy = float(np.round(clicked_pt["y"], 2))
-                        mode = st.session_state.get("rover_waypoint_click_mode_dual", "Start Point (S)")
-                        if "Start" in mode:
-                            st.session_state["rover_start_x1"] = cx
-                            st.session_state["rover_start_x2"] = cy
-                        else:
-                            st.session_state["rover_target_x1"] = cx
-                            st.session_state["rover_target_x2"] = cy
-                        st.session_state.pop("rover_sim", None)
-                        st.session_state.pop("rover_sim_a", None)
-                        st.session_state.pop("rover_sim_b", None)
-
-        def _cb_on_rover_plotly_select_dual_b():
-            state = st.session_state.get("plotly_rover_b")
-            if isinstance(state, dict):
-                sel_pts = state.get("selection", {}).get("points", [])
-                if sel_pts:
-                    clicked_pt = sel_pts[0]
-                    if "x" in clicked_pt and "y" in clicked_pt:
-                        cx = float(np.round(clicked_pt["x"], 2))
-                        cy = float(np.round(clicked_pt["y"], 2))
-                        mode = st.session_state.get("rover_waypoint_click_mode_dual", "Start Point (S)")
-                        if "Start" in mode:
-                            st.session_state["rover_start_x1"] = cx
-                            st.session_state["rover_start_x2"] = cy
-                        else:
-                            st.session_state["rover_target_x1"] = cx
-                            st.session_state["rover_target_x2"] = cy
-                        st.session_state.pop("rover_sim", None)
-                        st.session_state.pop("rover_sim_a", None)
-                        st.session_state.pop("rover_sim_b", None)
-
         col_a, col_b = st.columns(2)
         with col_a:
             st.subheader(f"Model A: {arch_a}")
@@ -3091,8 +3029,6 @@ def render_neural_pathfinding_tab():
                 )
                 st.plotly_chart(
                     fig_a,
-                    on_select=_cb_on_rover_plotly_select_dual_a,
-                    selection_mode=["points"],
                     key="plotly_rover_a",
                     config={"displayModeBar": False, "scrollZoom": False},
                     width="stretch",
@@ -3120,8 +3056,6 @@ def render_neural_pathfinding_tab():
                 )
                 st.plotly_chart(
                     fig_b,
-                    on_select=_cb_on_rover_plotly_select_dual_b,
-                    selection_mode=["points"],
                     key="plotly_rover_b",
                     config={"displayModeBar": False, "scrollZoom": False},
                     width="stretch",
