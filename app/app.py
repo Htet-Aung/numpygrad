@@ -232,23 +232,53 @@ st.markdown(
         box-shadow: 0 2px 6px rgba(79, 70, 229, 0.4) !important;
     }
 
-    /* Force high-contrast visibility on canvas internal toolbar buttons */
+    /* Canvas toolbar action buttons (Undo, Redo, Reset) */
     div[data-testid="stDrawableCanvas"] button {
-        background: linear-gradient(135deg, #4F46E5 0%, #4338CA 100%) !important;
-        border: 1.5px solid #818CF8 !important;
-        color: #FFFFFF !important;
+        background: #1E293B !important;
+        border: 1.5px solid #475569 !important;
+        color: #F8FAFC !important;
         border-radius: 6px !important;
         padding: 5px 10px !important;
         margin: 3px !important;
-        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3) !important;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25) !important;
         cursor: pointer !important;
+        transition: all 0.2s ease !important;
     }
     div[data-testid="stDrawableCanvas"] button:hover {
-        background: linear-gradient(135deg, #6366F1 0%, #4F46E5 100%) !important;
-        border-color: #C7D2FE !important;
-        box-shadow: 0 4px 12px rgba(99, 102, 241, 0.5) !important;
+        background: #3B82F6 !important;
+        border-color: #93C5FD !important;
+        box-shadow: 0 4px 10px rgba(59, 130, 246, 0.4) !important;
         transform: translateY(-1px) !important;
     }
+
+    /* Distinct styling for Reset Canvas / Trash button (3rd button) */
+    div[data-testid="stDrawableCanvas"] button:nth-child(3),
+    div[data-testid="stDrawableCanvas"] button[title*="trash"],
+    div[data-testid="stDrawableCanvas"] button[title*="Clear"],
+    div[data-testid="stDrawableCanvas"] button[title*="Reset"] {
+        background: #3B1D28 !important;
+        border: 1.5px solid #991B1B !important;
+    }
+    div[data-testid="stDrawableCanvas"] button:nth-child(3):hover,
+    div[data-testid="stDrawableCanvas"] button[title*="trash"]:hover,
+    div[data-testid="stDrawableCanvas"] button[title*="Clear"]:hover,
+    div[data-testid="stDrawableCanvas"] button[title*="Reset"]:hover {
+        background: #DC2626 !important;
+        border-color: #FCA5A5 !important;
+        box-shadow: 0 4px 10px rgba(220, 38, 38, 0.45) !important;
+        transform: translateY(-1px) !important;
+    }
+
+    /* Hide Save to Streamlit / Download button from canvas toolbar */
+    div[data-testid="stDrawableCanvas"] button:nth-child(4),
+    div[data-testid="stDrawableCanvas"] button:last-child,
+    div[data-testid="stDrawableCanvas"] button[title*="Save"],
+    div[data-testid="stDrawableCanvas"] button[title*="Download"],
+    div[data-testid="stDrawableCanvas"] button[aria-label*="Save"],
+    div[data-testid="stDrawableCanvas"] button[aria-label*="Download"] {
+        display: none !important;
+    }
+
     div[data-testid="stDrawableCanvas"] svg {
         fill: #FFFFFF !important;
         stroke: #FFFFFF !important;
@@ -791,8 +821,6 @@ def render_mnist_inference_tab():
             display_toolbar=True,
             key="mnist_digit_canvas",
         )
-
-        st.button("Classify Drawing", type="primary", use_container_width=True)
 
         # Preprocess and show thumbnail
         processed = preprocess_canvas_image(canvas_result)
