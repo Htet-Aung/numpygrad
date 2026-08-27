@@ -339,72 +339,197 @@ st.markdown(
 
 
 # -----------------------------------------------------------------------------
-# Synthetic & Custom Dataset Generators (Pure NumPy)
+# Curated Geometric Preset & Dataset Generators (Pure NumPy)
 # -----------------------------------------------------------------------------
 
-def load_custom_maze_preset() -> Tuple[List[List[float]], List[int]]:
-    """Generates an initial obstacle maze barrier layout for Custom Canvas."""
+def load_preset_island_in_moat(
+    n_samples: int = 300, noise: float = 0.05, random_state: int = 42
+) -> Tuple[List[List[float]], List[int]]:
+    """Generates an Inner Circular Island (Class 0) surrounded by a Circular Hazard Moat (Class 1) and Outer Shore (Class 0)."""
+    rng = np.random.default_rng(random_state)
     pts_X: List[List[float]] = []
     pts_y: List[int] = []
-    rng = np.random.default_rng(42)
 
-    # Class 1 (Red Obstacle Walls):
-    # Left vertical wall at x=-0.7 with opening at middle-top
-    for y_val in np.linspace(-2.0, 0.2, 14):
-        pts_X.append([round(-0.7 + float(rng.normal(0, 0.03)), 3), round(float(y_val), 3)])
-        pts_y.append(1)
-    for y_val in np.linspace(1.0, 2.0, 7):
-        pts_X.append([round(-0.7 + float(rng.normal(0, 0.03)), 3), round(float(y_val), 3)])
-        pts_y.append(1)
-
-    # Right vertical wall at x=0.7 with opening at middle-bottom
-    for y_val in np.linspace(-2.0, -1.0, 7):
-        pts_X.append([round(0.7 + float(rng.normal(0, 0.03)), 3), round(float(y_val), 3)])
-        pts_y.append(1)
-    for y_val in np.linspace(-0.2, 2.0, 14):
-        pts_X.append([round(0.7 + float(rng.normal(0, 0.03)), 3), round(float(y_val), 3)])
-        pts_y.append(1)
-
-    # Class 0 (Blue Free Space Corridors):
-    for y_val in np.linspace(-1.8, 1.8, 10):
-        pts_X.append([round(-1.6 + float(rng.normal(0, 0.04)), 3), round(float(y_val), 3)])
-        pts_y.append(0)
-    for y_val in np.linspace(-1.8, 1.8, 10):
-        pts_X.append([round(0.0 + float(rng.normal(0, 0.04)), 3), round(float(y_val), 3)])
-        pts_y.append(0)
-    for y_val in np.linspace(-1.8, 1.8, 10):
-        pts_X.append([round(1.6 + float(rng.normal(0, 0.04)), 3), round(float(y_val), 3)])
-        pts_y.append(0)
-
-    return pts_X, pts_y
-
-
-def load_custom_ring_preset() -> Tuple[List[List[float]], List[int]]:
-    """Generates an island ring obstacle layout for Custom Canvas."""
-    pts_X: List[List[float]] = []
-    pts_y: List[int] = []
-    rng = np.random.default_rng(42)
-
-    # Class 1 (Red): Obstacle Ring
-    angles = np.linspace(0, 2 * np.pi, 24, endpoint=False)
-    for a in angles:
+    # Class 0: Inner Core Island
+    n_core = max(10, n_samples // 3)
+    r_core = rng.uniform(0.0, 0.48, n_core)
+    th_core = rng.uniform(0, 2 * np.pi, n_core)
+    for r, th in zip(r_core, th_core):
         pts_X.append([
-            round(1.2 * float(np.cos(a)) + float(rng.normal(0, 0.04)), 3),
-            round(1.2 * float(np.sin(a)) + float(rng.normal(0, 0.04)), 3),
+            round(float(r * np.cos(th) + rng.normal(0, noise)), 3),
+            round(float(r * np.sin(th) + rng.normal(0, noise)), 3),
+        ])
+        pts_y.append(0)
+
+    # Class 1: Moat Hazard Ring
+    n_moat = max(10, n_samples // 3)
+    r_moat = rng.uniform(0.92, 1.38, n_moat)
+    th_moat = rng.uniform(0, 2 * np.pi, n_moat)
+    for r, th in zip(r_moat, th_moat):
+        pts_X.append([
+            round(float(r * np.cos(th) + rng.normal(0, noise)), 3),
+            round(float(r * np.sin(th) + rng.normal(0, noise)), 3),
         ])
         pts_y.append(1)
 
-    # Class 0 (Blue): Center Hub and Outer perimeter
-    hub_angles = np.linspace(0, 2 * np.pi, 8, endpoint=False)
-    for a in hub_angles:
-        pts_X.append([round(0.35 * float(np.cos(a)), 3), round(0.35 * float(np.sin(a)), 3)])
-        pts_y.append(0)
-    outer_angles = np.linspace(0, 2 * np.pi, 16, endpoint=False)
-    for a in outer_angles:
-        pts_X.append([round(2.0 * float(np.cos(a)), 3), round(2.0 * float(np.sin(a)), 3)])
+    # Class 0: Outer Perimeter
+    n_outer = max(10, n_samples - n_core - n_moat)
+    r_outer = rng.uniform(1.78, 2.28, n_outer)
+    th_outer = rng.uniform(0, 2 * np.pi, n_outer)
+    for r, th in zip(r_outer, th_outer):
+        pts_X.append([
+            round(float(r * np.cos(th) + rng.normal(0, noise)), 3),
+            round(float(r * np.sin(th) + rng.normal(0, noise)), 3),
+        ])
         pts_y.append(0)
 
     return pts_X, pts_y
+
+
+def load_preset_checkerboard_xor(
+    n_samples: int = 300, noise: float = 0.05, random_state: int = 42
+) -> Tuple[List[List[float]], List[int]]:
+    """Generates 4 Alternating Quadrant Blocks testing sharp non-linear XOR decision boundaries."""
+    rng = np.random.default_rng(random_state)
+    pts_X: List[List[float]] = []
+    pts_y: List[int] = []
+    per_quad = max(8, n_samples // 4)
+
+    quads = [
+        (0.20, 2.15, 0.20, 2.15, 1),    # Q1: Red (Class 1)
+        (-2.15, -0.20, 0.20, 2.15, 0),  # Q2: Blue (Class 0)
+        (-2.15, -0.20, -2.15, -0.20, 1),# Q3: Red (Class 1)
+        (0.20, 2.15, -2.15, -0.20, 0),  # Q4: Blue (Class 0)
+    ]
+    for x_min, x_max, y_min, y_max, label in quads:
+        xs = rng.uniform(x_min, x_max, per_quad)
+        ys = rng.uniform(y_min, y_max, per_quad)
+        for x, y in zip(xs, ys):
+            pts_X.append([
+                round(float(x + rng.normal(0, noise)), 3),
+                round(float(y + rng.normal(0, noise)), 3),
+            ])
+            pts_y.append(label)
+
+    return pts_X, pts_y
+
+
+def load_preset_s_bend_corridor(
+    n_samples: int = 260, noise: float = 0.04, random_state: int = 42
+) -> Tuple[List[List[float]], List[int]]:
+    """Generates Two Interlocking Horizontal Barrier Walls forcing an S-shaped navigation corridor."""
+    rng = np.random.default_rng(random_state)
+    pts_X: List[List[float]] = []
+    pts_y: List[int] = []
+
+    # Class 1 (Red Obstacle Walls)
+    # Top horizontal barrier: y=0.75, x in [-2.2, 0.6]
+    for x_val in np.linspace(-2.2, 0.6, 24):
+        pts_X.append([round(float(x_val + rng.normal(0, noise)), 3), round(float(0.75 + rng.normal(0, noise)), 3)])
+        pts_y.append(1)
+
+    # Bottom horizontal barrier: y=-0.75, x in [-0.6, 2.2]
+    for x_val in np.linspace(-0.6, 2.2, 24):
+        pts_X.append([round(float(x_val + rng.normal(0, noise)), 3), round(float(-0.75 + rng.normal(0, noise)), 3)])
+        pts_y.append(1)
+
+    # Class 0 (Blue Free Space Paths)
+    # Upper channel
+    for x_val in np.linspace(-2.0, 1.8, 16):
+        pts_X.append([round(float(x_val + rng.normal(0, noise)), 3), round(float(1.45 + rng.normal(0, noise)), 3)])
+        pts_y.append(0)
+    # Right chute
+    for y_val in np.linspace(-0.4, 0.4, 8):
+        pts_X.append([round(float(1.35 + rng.normal(0, noise)), 3), round(float(y_val + rng.normal(0, noise)), 3)])
+        pts_y.append(0)
+    # Middle channel
+    for x_val in np.linspace(-1.5, 1.3, 14):
+        pts_X.append([round(float(x_val + rng.normal(0, noise)), 3), round(float(0.0 + rng.normal(0, noise)), 3)])
+        pts_y.append(0)
+    # Left chute
+    for y_val in np.linspace(-0.4, 0.4, 8):
+        pts_X.append([round(float(-1.35 + rng.normal(0, noise)), 3), round(float(y_val + rng.normal(0, noise)), 3)])
+        pts_y.append(0)
+    # Lower channel
+    for x_val in np.linspace(-1.8, 2.0, 16):
+        pts_X.append([round(float(x_val + rng.normal(0, noise)), 3), round(float(-1.45 + rng.normal(0, noise)), 3)])
+        pts_y.append(0)
+
+    return pts_X, pts_y
+
+
+def load_preset_double_cross(
+    n_samples: int = 260, noise: float = 0.04, random_state: int = 42
+) -> Tuple[List[List[float]], List[int]]:
+    """Generates a Large Perpendicular Plus/Cross Obstacle (Class 1) with 4 Quadrant Pockets (Class 0)."""
+    rng = np.random.default_rng(random_state)
+    pts_X: List[List[float]] = []
+    pts_y: List[int] = []
+
+    # Class 1 (Red Plus Shape)
+    for y_val in np.linspace(-2.0, 2.0, 30):
+        pts_X.append([round(float(0.0 + rng.normal(0, noise)), 3), round(float(y_val + rng.normal(0, noise)), 3)])
+        pts_y.append(1)
+    for x_val in np.linspace(-2.0, 2.0, 30):
+        pts_X.append([round(float(x_val + rng.normal(0, noise)), 3), round(float(0.0 + rng.normal(0, noise)), 3)])
+        pts_y.append(1)
+
+    # Class 0 (Blue Quadrant Clusters)
+    for cx, cy in [(-1.15, 1.15), (1.15, 1.15), (-1.15, -1.15), (1.15, -1.15)]:
+        for _ in range(15):
+            pts_X.append([
+                round(float(cx + rng.normal(0, 0.28)), 3),
+                round(float(cy + rng.normal(0, 0.28)), 3),
+            ])
+            pts_y.append(0)
+
+    return pts_X, pts_y
+
+
+def load_preset_spirals(
+    n_samples: int = 300, noise: float = 0.08, random_state: int = 42
+) -> Tuple[List[List[float]], List[int]]:
+    """Generates Two Interleaved Archimedean Spiral Arms."""
+    rng = np.random.default_rng(random_state)
+    pts_X: List[List[float]] = []
+    pts_y: List[int] = []
+    n_per_arm = max(15, n_samples // 2)
+
+    # Arm 0 (Class 0, Blue)
+    r0 = np.linspace(0.15, 2.15, n_per_arm)
+    t0 = np.linspace(0, 4.0, n_per_arm)
+    for r, t in zip(r0, t0):
+        pts_X.append([
+            round(float(r * np.sin(t) + rng.normal(0, noise)), 3),
+            round(float(r * np.cos(t) + rng.normal(0, noise)), 3),
+        ])
+        pts_y.append(0)
+
+    # Arm 1 (Class 1, Red)
+    r1 = np.linspace(0.15, 2.15, n_per_arm)
+    t1 = np.linspace(np.pi, np.pi + 4.0, n_per_arm)
+    for r, t in zip(r1, t1):
+        pts_X.append([
+            round(float(r * np.sin(t) + rng.normal(0, noise)), 3),
+            round(float(r * np.cos(t) + rng.normal(0, noise)), 3),
+        ])
+        pts_y.append(1)
+
+    return pts_X, pts_y
+
+
+# Aliases for backward compatibility
+load_custom_maze_preset = load_preset_s_bend_corridor
+load_custom_ring_preset = load_preset_island_in_moat
+
+PRESET_GENERATOR_MAP = {
+    "Island in Moat": load_preset_island_in_moat,
+    "Checkerboard XOR": load_preset_checkerboard_xor,
+    "S-Bend Corridor": load_preset_s_bend_corridor,
+    "Double Cross": load_preset_double_cross,
+    "Spirals": load_preset_spirals,
+    "Concentric Circles": load_preset_island_in_moat,
+}
 
 
 def generate_dataset(
@@ -414,73 +539,37 @@ def generate_dataset(
     random_state: int = 42,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Generates 2D classification datasets using pure NumPy or retrieves custom canvas points."""
-    if dataset_name == "Custom Canvas":
+    if dataset_name in ["Custom Canvas", "Custom / Interactive Canvas"]:
         custom_X = st.session_state.get("custom_points_X")
         custom_y = st.session_state.get("custom_points_y")
         if custom_X is None or custom_y is None or len(custom_X) == 0:
-            init_X, init_y = load_custom_maze_preset()
+            init_X, init_y = load_preset_checkerboard_xor(n_samples=200, noise=0.04, random_state=random_state)
             st.session_state["custom_points_X"] = init_X
             st.session_state["custom_points_y"] = init_y
             custom_X, custom_y = init_X, init_y
         return np.array(custom_X, dtype=np.float32), np.array(custom_y, dtype=np.int64)
 
+    if dataset_name in PRESET_GENERATOR_MAP:
+        gen_fn = PRESET_GENERATOR_MAP[dataset_name]
+        pts_X, pts_y = gen_fn(n_samples=n_samples, noise=noise, random_state=random_state)
+        return np.array(pts_X, dtype=np.float32), np.array(pts_y, dtype=np.int64)
+
+    # Two Moons fallback
     rng = np.random.default_rng(random_state)
     n_samples_out = n_samples // 2
     n_samples_in = n_samples - n_samples_out
+    outer_circ_x = np.cos(np.linspace(0, np.pi, n_samples_out))
+    outer_circ_y = np.sin(np.linspace(0, np.pi, n_samples_out))
+    inner_circ_x = 1.0 - np.cos(np.linspace(0, np.pi, n_samples_in))
+    inner_circ_y = 1.0 - np.sin(np.linspace(0, np.pi, n_samples_in)) - 0.5
 
-    if dataset_name == "Two Moons":
-        outer_circ_x = np.cos(np.linspace(0, np.pi, n_samples_out))
-        outer_circ_y = np.sin(np.linspace(0, np.pi, n_samples_out))
-        inner_circ_x = 1.0 - np.cos(np.linspace(0, np.pi, n_samples_in))
-        inner_circ_y = 1.0 - np.sin(np.linspace(0, np.pi, n_samples_in)) - 0.5
-
-        X = np.vstack([
-            np.column_stack([outer_circ_x, outer_circ_y]),
-            np.column_stack([inner_circ_x, inner_circ_y]),
-        ])
-        y = np.hstack([np.zeros(n_samples_out, dtype=int), np.ones(n_samples_in, dtype=int)])
-
-    elif dataset_name == "Concentric Circles":
-        factor = 0.5
-        linspace_out = np.linspace(0, 2 * np.pi, n_samples_out, endpoint=False)
-        linspace_in = np.linspace(0, 2 * np.pi, n_samples_in, endpoint=False)
-
-        outer_circ_x = np.cos(linspace_out)
-        outer_circ_y = np.sin(linspace_out)
-        inner_circ_x = np.cos(linspace_in) * factor
-        inner_circ_y = np.sin(linspace_in) * factor
-
-        X = np.vstack([
-            np.column_stack([outer_circ_x, outer_circ_y]),
-            np.column_stack([inner_circ_x, inner_circ_y]),
-        ])
-        y = np.hstack([np.zeros(n_samples_out, dtype=int), np.ones(n_samples_in, dtype=int)])
-
-    elif dataset_name == "Spirals":
-        n_classes = 2
-        samples_per_class = n_samples // n_classes
-        X_list, y_list = [], []
-
-        for c in range(n_classes):
-            r = np.linspace(0.1, 1.0, samples_per_class)
-            t = np.linspace(c * 4.0, (c + 1) * 4.0, samples_per_class) + rng.normal(scale=noise, size=samples_per_class)
-            x1 = r * np.sin(t)
-            x2 = r * np.cos(t)
-            X_list.append(np.column_stack([x1, x2]))
-            y_list.append(np.full(samples_per_class, c, dtype=int))
-
-        X = np.vstack(X_list)
-        y = np.hstack(y_list)
-        return X.astype(np.float32), y
-
-    else:
-        # Default fallback
-        X = rng.normal(size=(n_samples, 2))
-        y = (X[:, 0] * X[:, 1] > 0).astype(int)
-
+    X = np.vstack([
+        np.column_stack([outer_circ_x, outer_circ_y]),
+        np.column_stack([inner_circ_x, inner_circ_y]),
+    ])
+    y = np.hstack([np.zeros(n_samples_out, dtype=int), np.ones(n_samples_in, dtype=int)])
     if noise > 0.0:
         X += rng.normal(scale=noise, size=X.shape)
-
     return X.astype(np.float32), y
 
 
@@ -1814,58 +1903,74 @@ def render_single_model_studio():
     """Renders the Single Model 2D Decision Boundary training & interactive inference laboratory."""
     # 0. Session state initialization for Custom Canvas
     if "custom_points_X" not in st.session_state or "custom_points_y" not in st.session_state:
-        init_X, init_y = load_custom_maze_preset()
+        init_X, init_y = load_preset_checkerboard_xor(n_samples=200, noise=0.04)
         st.session_state["custom_points_X"] = init_X
         st.session_state["custom_points_y"] = init_y
 
     # Process custom canvas clicks before sidebar widgets instantiate
-    canvas_event = st.session_state.get("custom_2d_canvas")
-    if isinstance(canvas_event, dict):
-        pts = canvas_event.get("selection", {}).get("points", [])
-        if pts and "x" in pts[0] and "y" in pts[0]:
-            cx = float(np.round(pts[0]["x"], 2))
-            cy = float(np.round(pts[0]["y"], 2))
-            click_tag = ("custom_canvas", cx, cy, len(st.session_state.get("custom_points_X", [])))
-            if st.session_state.get("_last_canvas_click_tag") != click_tag:
-                st.session_state["_last_canvas_click_tag"] = click_tag
-                drop_mode = st.session_state.get("custom_drop_class", "Class 0 (Blue / Free Space)")
-                c_idx = 1 if "Class 1" in drop_mode else 0
-                density = st.session_state.get("custom_brush_density", "Single Point")
+    for c_key in ["tab1_custom_canvas", "custom_2d_canvas"]:
+        canvas_event = st.session_state.get(c_key)
+        if isinstance(canvas_event, dict):
+            pts = canvas_event.get("selection", {}).get("points", [])
+            if pts and "x" in pts[0] and "y" in pts[0]:
+                cx = float(np.round(pts[0]["x"], 2))
+                cy = float(np.round(pts[0]["y"], 2))
+                click_tag = (c_key, cx, cy, len(st.session_state.get("custom_points_X", [])))
+                if st.session_state.get("_last_canvas_click_tag") != click_tag:
+                    st.session_state["_last_canvas_click_tag"] = click_tag
+                    tool_mode = st.session_state.get("canvas_brush_mode", "Drop Class 0 (Blue)")
+                    density = st.session_state.get("canvas_brush_density", "Single Point")
 
-                if "Cluster" in density:
-                    rng_c = np.random.default_rng()
-                    for _ in range(5):
-                        jx = float(np.clip(round(cx + rng_c.normal(0, 0.08), 3), -2.4, 2.4))
-                        jy = float(np.clip(round(cy + rng_c.normal(0, 0.08), 3), -2.4, 2.4))
-                        st.session_state["custom_points_X"].append([jx, jy])
-                        st.session_state["custom_points_y"].append(c_idx)
-                else:
-                    st.session_state["custom_points_X"].append([cx, cy])
-                    st.session_state["custom_points_y"].append(c_idx)
+                    if "Eraser" in tool_mode:
+                        # Eraser mode: remove points within distance < 0.28
+                        cur_X = st.session_state.get("custom_points_X", [])
+                        cur_y = st.session_state.get("custom_points_y", [])
+                        if cur_X:
+                            pts_arr = np.array(cur_X)
+                            dists = np.sqrt(np.sum((pts_arr - np.array([cx, cy])) ** 2, axis=1))
+                            within_radius = np.where(dists < 0.28)[0]
+                            if len(within_radius) > 0:
+                                keep_mask = np.ones(len(cur_X), dtype=bool)
+                                keep_mask[within_radius] = False
+                                st.session_state["custom_points_X"] = [cur_X[i] for i in range(len(cur_X)) if keep_mask[i]]
+                                st.session_state["custom_points_y"] = [cur_y[i] for i in range(len(cur_y)) if keep_mask[i]]
+                    else:
+                        c_idx = 1 if "Class 1" in tool_mode else 0
+                        if "Cluster" in density:
+                            rng_c = np.random.default_rng()
+                            for _ in range(5):
+                                jx = float(np.clip(round(cx + rng_c.normal(0, 0.08), 3), -2.4, 2.4))
+                                jy = float(np.clip(round(cy + rng_c.normal(0, 0.08), 3), -2.4, 2.4))
+                                st.session_state["custom_points_X"].append([jx, jy])
+                                st.session_state["custom_points_y"].append(c_idx)
+                        elif "Dense Line" in density:
+                            for t in np.linspace(-0.18, 0.18, 8):
+                                lx = float(np.clip(round(cx + t, 3), -2.4, 2.4))
+                                ly = float(np.clip(round(cy, 3), -2.4, 2.4))
+                                st.session_state["custom_points_X"].append([lx, ly])
+                                st.session_state["custom_points_y"].append(c_idx)
+                        else:
+                            st.session_state["custom_points_X"].append([cx, cy])
+                            st.session_state["custom_points_y"].append(c_idx)
 
-                # Reset trained model on custom canvas since data changed
-                if st.session_state.get("trained_2d_model", {}).get("dataset_name") == "Custom Canvas":
-                    st.session_state.pop("trained_2d_model", None)
+                    # Invalidate cached model since custom data changed
+                    if st.session_state.get("trained_2d_model", {}).get("dataset_name") in ["Custom Canvas", "Custom / Interactive Canvas"]:
+                        st.session_state.pop("trained_2d_model", None)
 
     # Callbacks for custom canvas controls
-    def _cb_load_custom_maze():
-        m_x, m_y = load_custom_maze_preset()
-        st.session_state["custom_points_X"] = m_x
-        st.session_state["custom_points_y"] = m_y
-        if st.session_state.get("trained_2d_model", {}).get("dataset_name") == "Custom Canvas":
-            st.session_state.pop("trained_2d_model", None)
-
-    def _cb_load_custom_ring():
-        r_x, r_y = load_custom_ring_preset()
-        st.session_state["custom_points_X"] = r_x
-        st.session_state["custom_points_y"] = r_y
-        if st.session_state.get("trained_2d_model", {}).get("dataset_name") == "Custom Canvas":
-            st.session_state.pop("trained_2d_model", None)
+    def _cb_load_preset_from_selector():
+        choice = st.session_state.get("canvas_preset_selector", "-- Select Preset --")
+        if choice in PRESET_GENERATOR_MAP:
+            p_x, p_y = PRESET_GENERATOR_MAP[choice](n_samples=260, noise=0.04)
+            st.session_state["custom_points_X"] = p_x
+            st.session_state["custom_points_y"] = p_y
+            if st.session_state.get("trained_2d_model", {}).get("dataset_name") in ["Custom Canvas", "Custom / Interactive Canvas"]:
+                st.session_state.pop("trained_2d_model", None)
 
     def _cb_clear_custom_canvas():
         st.session_state["custom_points_X"] = []
         st.session_state["custom_points_y"] = []
-        if st.session_state.get("trained_2d_model", {}).get("dataset_name") == "Custom Canvas":
+        if st.session_state.get("trained_2d_model", {}).get("dataset_name") in ["Custom Canvas", "Custom / Interactive Canvas"]:
             st.session_state.pop("trained_2d_model", None)
 
     # ---------------- Sidebar Controls ----------------
@@ -1876,36 +1981,40 @@ def render_single_model_studio():
         st.subheader("1. Dataset Configuration")
         dataset_name = st.selectbox(
             "Dataset Topology",
-            ["Two Moons", "Concentric Circles", "Spirals", "Custom Canvas"],
-            index=0,
+            ["Island in Moat", "Checkerboard XOR", "S-Bend Corridor", "Double Cross", "Spirals", "Custom / Interactive Canvas"],
+            index=1,
             key="single_dataset_name",
         )
-        if dataset_name == "Custom Canvas":
+        if dataset_name in ["Custom Canvas", "Custom / Interactive Canvas"]:
             st.caption("Interactive Canvas Drawing Controls:")
             st.radio(
-                "Drop Class:",
-                ["Class 0 (Blue / Free Space)", "Class 1 (Red / Obstacle)"],
+                "Tool:",
+                ["Drop Class 0 (Blue)", "Drop Class 1 (Red)", "Eraser / Remove Nearest"],
                 horizontal=True,
-                key="custom_drop_class",
-                help="Select which class of point to drop when clicking on the 2D grid.",
+                key="canvas_brush_mode",
+                help="Select whether clicking drops Class 0, Class 1, or erases nearby points.",
             )
             st.radio(
-                "Brush Density:",
-                ["Single Point", "Scatter Cluster (5 pts)"],
+                "Density:",
+                ["Single Point", "Cluster (5 pts)", "Dense Line (8 pts)"],
                 horizontal=True,
-                key="custom_brush_density",
-                help="Single point drops 1 coordinate; Scatter cluster drops 5 jittered points.",
+                key="canvas_brush_density",
+                help="Single point drops 1 coordinate; Cluster drops 5 jittered points; Dense line drops 8 points.",
+            )
+            st.selectbox(
+                "Load Preset Pattern:",
+                ["-- Select Preset --", "Island in Moat", "Checkerboard XOR", "S-Bend Corridor", "Double Cross", "Spirals"],
+                key="canvas_preset_selector",
             )
             c_p1, c_p2 = st.columns(2)
-            c_p1.button("Load Maze", width="stretch", key="btn_load_maze", on_click=_cb_load_custom_maze, help="Load obstacle maze barrier preset.")
-            c_p2.button("Load Ring", width="stretch", key="btn_load_ring", on_click=_cb_load_custom_ring, help="Load island ring obstacle preset.")
-            st.button("Clear Custom Data", width="stretch", key="btn_clear_canvas", on_click=_cb_clear_custom_canvas, help="Clears all custom points from canvas.")
+            c_p1.button("Load Pattern", width="stretch", key="btn_load_pattern_side", on_click=_cb_load_preset_from_selector, help="Load selected geometric preset.")
+            c_p2.button("Clear All Points", width="stretch", key="btn_clear_points_side", on_click=_cb_clear_custom_canvas, help="Clears all custom points from canvas.")
             n_samples = len(st.session_state.get("custom_points_X", []))
             noise = 0.0
             seed = 42
         else:
             n_samples = st.slider("Sample Count", min_value=100, max_value=1000, value=500, step=50, key="single_n_samples")
-            noise = st.slider("Noise Level", min_value=0.0, max_value=0.3, value=0.12, step=0.02, key="single_noise")
+            noise = st.slider("Noise Level", min_value=0.0, max_value=0.3, value=0.06, step=0.01, key="single_noise")
             seed = st.number_input("Random Seed", min_value=0, max_value=9999, value=42, step=1, key="single_seed")
 
         # 2. Architecture Settings
@@ -1975,13 +2084,13 @@ def render_single_model_studio():
 
     # ---------------- Interactive Training Loop ----------------
     if start_training:
-        if dataset_name == "Custom Canvas":
+        if dataset_name in ["Custom Canvas", "Custom / Interactive Canvas"]:
             c0_count = int(np.sum(y == 0)) if len(y) > 0 else 0
             c1_count = int(np.sum(y == 1)) if len(y) > 0 else 0
             if c0_count < 5 or c1_count < 5:
                 status_placeholder.warning(
                     f"Insufficient custom points: You currently have {c0_count} Class 0 (Blue) and {c1_count} Class 1 (Red) points. "
-                    "Please place at least 5 points for each class on the canvas (or click 'Load Maze' in the sidebar) before training."
+                    "Please place at least 5 points for each class on the canvas (or load a preset pattern) before training."
                 )
                 start_training = False
 
@@ -2336,29 +2445,45 @@ def render_single_model_studio():
                     st.info("Train the model to visualize post-backpropagation gradient flow across layers.")
 
     elif not start_training:
-        if dataset_name == "Custom Canvas":
+        if dataset_name in ["Custom Canvas", "Custom / Interactive Canvas"]:
             c0_count = int(np.sum(y == 0)) if len(y) > 0 else 0
             c1_count = int(np.sum(y == 1)) if len(y) > 0 else 0
-            if HAS_PLOTLY:
-                fig_custom = plot_plotly_custom_canvas(
-                    X, y,
-                    title=f"Custom 2D Canvas (Click anywhere to drop data) - Total: {len(X)} pts (Blue: {c0_count}, Red: {c1_count})"
-                )
-                plot_left.plotly_chart(
-                    fig_custom,
-                    on_select="rerun",
-                    selection_mode=["points"],
-                    key="custom_2d_canvas",
-                    config={"displayModeBar": False, "scrollZoom": False},
-                    width="stretch",
-                )
-            else:
-                fig_b, _ = plot_dashboard_figures(None, X, y, [0.693], [50.0])
-                plot_left.pyplot(fig_b)
-                plt.close(fig_b)
+            
+            with plot_left.container():
+                tb_c1, tb_c2 = st.columns(2)
+                with tb_c1:
+                    st.radio("Tool:", ["Drop Class 0 (Blue)", "Drop Class 1 (Red)", "Eraser / Remove Nearest"], horizontal=True, key="canvas_brush_mode")
+                with tb_c2:
+                    st.radio("Density:", ["Single Point", "Cluster (5 pts)", "Dense Line (8 pts)"], horizontal=True, key="canvas_brush_density")
+
+                ps_c1, ps_c2, ps_c3 = st.columns([2, 1, 1])
+                with ps_c1:
+                    st.selectbox("Load Preset Pattern:", ["-- Select Preset --", "Island in Moat", "Checkerboard XOR", "S-Bend Corridor", "Double Cross", "Spirals"], key="canvas_preset_selector")
+                with ps_c2:
+                    st.button("Load Pattern", width="stretch", key="btn_load_pattern_main", on_click=_cb_load_preset_from_selector)
+                with ps_c3:
+                    st.button("Clear All Points", width="stretch", key="btn_clear_points_main", on_click=_cb_clear_custom_canvas)
+
+                if HAS_PLOTLY:
+                    fig_custom = plot_plotly_custom_canvas(
+                        X, y,
+                        title=f"Custom 2D Canvas (Click to Drop/Erase) - Total: {len(X)} pts (Blue: {c0_count}, Red: {c1_count})"
+                    )
+                    st.plotly_chart(
+                        fig_custom,
+                        on_select="rerun",
+                        selection_mode=["points"],
+                        key="tab1_custom_canvas",
+                        config={"displayModeBar": False, "scrollZoom": False},
+                        width="stretch",
+                    )
+                else:
+                    fig_b, _ = plot_dashboard_figures(None, X, y, [0.693], [50.0])
+                    st.pyplot(fig_b)
+                    plt.close(fig_b)
 
             with plot_right.container():
-                st.subheader("Custom Canvas Drawing Studio")
+                st.subheader("Interactive Canvas Controls & Studio")
                 st.markdown(
                     f"""
                     <div style="background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%); border: 1px solid #334155; border-radius: 10px; padding: 1.25rem; color: white;">
@@ -2375,13 +2500,13 @@ def render_single_model_studio():
                     unsafe_allow_html=True,
                 )
                 st.markdown("<div style='margin-top: 0.75rem;'></div>", unsafe_allow_html=True)
-                st.markdown("#### How to Train on Custom Topologies:")
+                st.markdown("#### Canvas Drawing Guide:")
                 st.markdown(
-                    "1. **Select Drop Class & Brush Density** in the sidebar.\n"
-                    "2. **Click anywhere on the canvas** to drop data points (or click *Load Maze* / *Load Ring* in the sidebar).\n"
-                    "3. Ensure at least **5 points** exist for both Class 0 and Class 1.\n"
-                    "4. Click the primary **Start Training** button above to train a NumPyGrad neural network on your custom shapes!\n"
-                    "5. Once trained, switch to **Autonomous Neural Pathfinding (Tab 2)** to see the Rover navigate through your custom obstacle course!"
+                    "1. **Select Tool & Density** in the toolbar above or the sidebar.\n"
+                    "2. **Click on the canvas** to drop points or erase nearby points.\n"
+                    "3. Load any preset pattern (**Island in Moat**, **Checkerboard XOR**, **S-Bend Corridor**, **Double Cross**, **Spirals**) as a baseline and customize.\n"
+                    "4. Click **Start Training** to build and train the neural network on your custom layout.\n"
+                    "5. Open **Tab 2 (Autonomous Neural Pathfinding)** to navigate the Rover across your custom course!"
                 )
         else:
             # Initial static plot before training starts for synthetic datasets
@@ -2418,18 +2543,18 @@ def render_model_comparison_studio():
         st.subheader("1. Shared Dataset")
         dataset_name = st.selectbox(
             "Dataset Topology",
-            ["Two Moons", "Concentric Circles", "Spirals", "Custom Canvas"],
-            index=2,
+            ["Island in Moat", "Checkerboard XOR", "S-Bend Corridor", "Double Cross", "Spirals", "Custom / Interactive Canvas"],
+            index=1,
             key="comp_dataset_name",
         )
-        if dataset_name == "Custom Canvas":
+        if dataset_name in ["Custom Canvas", "Custom / Interactive Canvas"]:
             n_samples = len(st.session_state.get("custom_points_X", []))
             noise = 0.0
             seed = 42
             st.caption(f"Using Custom Canvas points (Total: {n_samples} pts). Customize layout on Single Model tab.")
         else:
             n_samples = st.slider("Sample Count", min_value=100, max_value=1000, value=500, step=50, key="comp_n_samples")
-            noise = st.slider("Noise Level", min_value=0.0, max_value=0.3, value=0.10, step=0.02, key="comp_noise")
+            noise = st.slider("Noise Level", min_value=0.0, max_value=0.3, value=0.06, step=0.01, key="comp_noise")
             seed = st.number_input("Random Seed", min_value=0, max_value=9999, value=42, step=1, key="comp_seed")
 
         # 2. Model A Configuration
@@ -2509,7 +2634,7 @@ def render_model_comparison_studio():
 
     # ---------------- Dual Training Loop ----------------
     if start_training:
-        if dataset_name == "Custom Canvas":
+        if dataset_name in ["Custom Canvas", "Custom / Interactive Canvas"]:
             c0_count = int(np.sum(y == 0)) if len(y) > 0 else 0
             c1_count = int(np.sum(y == 1)) if len(y) > 0 else 0
             if c0_count < 5 or c1_count < 5:
@@ -2932,7 +3057,7 @@ def render_model_comparison_studio():
                         st.info("Train the model to visualize post-backpropagation gradient flow across layers.")
 
     elif not start_training:
-        if dataset_name == "Custom Canvas":
+        if dataset_name in ["Custom Canvas", "Custom / Interactive Canvas"]:
             c0_count = int(np.sum(y == 0)) if len(y) > 0 else 0
             c1_count = int(np.sum(y == 1)) if len(y) > 0 else 0
             if HAS_PLOTLY:
