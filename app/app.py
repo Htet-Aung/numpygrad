@@ -39,20 +39,31 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    /* Style the header to be transparent and non-blocking while keeping collapse controls active */
+    /* Clean transparent header bar */
     header[data-testid="stHeader"] {
         background: transparent !important;
-        height: 3rem !important;
-        z-index: 100 !important;
+        height: 3.5rem !important;
+        z-index: 99 !important;
     }
 
-    /* Hide Deploy button and default Streamlit decorations only */
+    /* Hide the Deploy button exclusively across multiple Streamlit DOM versions */
+    [data-testid="stAppDeployButton"],
+    .stAppDeployButton,
     .stDeployButton,
+    div[data-testid="stToolbarActions"] > button:first-child,
+    div[data-testid="stHeaderActionElements"] > button:first-child,
     [data-testid="stDecoration"],
-    [data-testid="stStatusWidget"],
-    #MainMenu,
-    footer {
+    [data-testid="stStatusWidget"] {
         display: none !important;
+    }
+
+    /* Keep the three-dots options menu visible and functional */
+    #MainMenu,
+    [data-testid="stMainMenu"],
+    [data-testid="stHeaderActionElements"],
+    [data-testid="stToolbar"] {
+        visibility: visible !important;
+        display: block !important;
     }
 
     /* Keep collapsed and expanded sidebar chevron buttons visible and clickable */
@@ -70,9 +81,10 @@ st.markdown(
         padding-right: 2rem !important;
     }
 
-    /* Remove dead space at the top of the sidebar */
-    [data-testid="stSidebarUserContent"],
+    /* Remove top gap in all Streamlit sidebar wrapper containers */
+    section[data-testid="stSidebar"] > div:first-child,
     [data-testid="stSidebarContent"],
+    [data-testid="stSidebarUserContent"],
     section[data-testid="stSidebar"] .block-container {
         padding-top: 1rem !important;
         padding-bottom: 1rem !important;
