@@ -2850,24 +2850,6 @@ def render_neural_pathfinding_tab():
             help="Scrub through the rover's trajectory to inspect position, heading, and sensor radar rays at each individual step.",
         )
 
-        # ---------------- Telemetry Dashboard ----------------
-        m_stat, m_steps, m_dist, m_haz, m_inf = st.columns(5)
-        m_stat.metric("Mission Status", status_text, delta=status_delta, delta_color=status_delta_color)
-        m_steps.metric("Steps Taken", f"{steps_taken} / {max_steps}")
-        m_dist.metric("Path Distance", f"{path_len:.2f}")
-        m_haz.metric("Max Hazard", f"{max_hazard * 100:.1f}%", delta="Safe" if max_hazard <= 0.55 else "Breached", delta_color="normal" if max_hazard <= 0.55 else "inverse")
-        m_inf.metric("Forward Inferences", f"{total_inferences}")
-
-        # Interactive Step Playback Scrubber
-        step_idx = st.slider(
-            "Inspect Simulation Step (Scrubber)",
-            min_value=0,
-            max_value=len(trajectory) - 1,
-            value=len(trajectory) - 1,
-            key="rover_step_slider",
-            help="Scrub through the rover's trajectory to inspect position, heading, and sensor radar rays at each individual step.",
-        )
-
         # Visual Simulation Plot & Diagnostics
         col_chart, col_details = st.columns([3, 2])
         with col_chart:
