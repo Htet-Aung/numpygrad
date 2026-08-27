@@ -206,18 +206,54 @@ st.markdown(
         margin: 0;
     }
 
-    /* Force visibility of canvas undo/redo/clear icons */
-    div[data-testid="stDrawableCanvas"] ~ div button,
-    div[data-testid="stDrawableCanvas"] button {
-        background-color: #31333F !important;
-        border: 1px solid #4A4A5A !important;
+    /* Primary action buttons (Classify Drawing, Start Training, etc.) */
+    div.stButton > button[kind="primary"],
+    div.stButton > button {
+        background: linear-gradient(135deg, #6366F1 0%, #4F46E5 100%) !important;
         color: #FFFFFF !important;
-        border-radius: 4px !important;
-        margin: 2px !important;
+        font-weight: 700 !important;
+        font-size: 1.05rem !important;
+        border: 1.5px solid #818CF8 !important;
+        border-radius: 8px !important;
+        padding: 0.6rem 1.25rem !important;
+        box-shadow: 0 4px 14px rgba(79, 70, 229, 0.4) !important;
+        transition: all 0.2s ease-in-out !important;
+        margin-top: 6px !important;
+    }
+    div.stButton > button:hover {
+        background: linear-gradient(135deg, #7C3AED 0%, #6366F1 100%) !important;
+        border-color: #C7D2FE !important;
+        box-shadow: 0 6px 20px rgba(124, 58, 237, 0.55) !important;
+        transform: translateY(-1px) !important;
+        color: #FFFFFF !important;
+    }
+    div.stButton > button:active {
+        transform: translateY(1px) !important;
+        box-shadow: 0 2px 6px rgba(79, 70, 229, 0.4) !important;
+    }
+
+    /* Force high-contrast visibility on canvas internal toolbar buttons */
+    div[data-testid="stDrawableCanvas"] button {
+        background: linear-gradient(135deg, #4F46E5 0%, #4338CA 100%) !important;
+        border: 1.5px solid #818CF8 !important;
+        color: #FFFFFF !important;
+        border-radius: 6px !important;
+        padding: 5px 10px !important;
+        margin: 3px !important;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3) !important;
+        cursor: pointer !important;
+    }
+    div[data-testid="stDrawableCanvas"] button:hover {
+        background: linear-gradient(135deg, #6366F1 0%, #4F46E5 100%) !important;
+        border-color: #C7D2FE !important;
+        box-shadow: 0 4px 12px rgba(99, 102, 241, 0.5) !important;
+        transform: translateY(-1px) !important;
     }
     div[data-testid="stDrawableCanvas"] svg {
         fill: #FFFFFF !important;
         stroke: #FFFFFF !important;
+        color: #FFFFFF !important;
+        filter: drop-shadow(0px 1px 2px rgba(0, 0, 0, 0.6)) !important;
     }
     div[data-testid="stDrawableCanvas"] svg path {
         fill: #FFFFFF !important;
@@ -752,6 +788,7 @@ def render_mnist_inference_tab():
             height=280,
             width=280,
             drawing_mode="freedraw",
+            display_toolbar=True,
             key="mnist_digit_canvas",
         )
 
