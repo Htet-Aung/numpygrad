@@ -834,4 +834,18 @@ def test_tangential_steering_escape_local_minima():
     assert float(np.linalg.norm(end_pt - start_pt)) > 0.3
 
 
+def test_find_safe_waypoints():
+    from app.app import build_model
+    from numpygrad.utils.pathfinding import find_safe_waypoints
+
+    model = build_model(num_layers=2, hidden_dim=8, activation_name="Tanh")
+    start_pt, target_pt = find_safe_waypoints(model, grid_bounds=(-2.0, 2.0), resolution=25)
+
+    assert isinstance(start_pt, tuple) and len(start_pt) == 2
+    assert isinstance(target_pt, tuple) and len(target_pt) == 2
+    # Ensure distance between start and target is substantial
+    dist = float(np.linalg.norm(np.array(start_pt) - np.array(target_pt)))
+    assert dist > 1.0
+
+
 

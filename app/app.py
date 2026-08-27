@@ -40,7 +40,7 @@ from numpygrad.core.tensor import Tensor, no_grad
 import numpygrad.nn as nn
 import numpygrad.optim as optim
 from numpygrad.utils.data import TensorDataset, DataLoader
-from numpygrad.utils.pathfinding import simulate_rover_path
+from numpygrad.utils.pathfinding import simulate_rover_path, find_safe_waypoints
 from numpygrad.serialization import load_model
 
 
@@ -2650,10 +2650,36 @@ def render_neural_pathfinding_tab():
             dataset_name = saved_comp.get("dataset_name", "2D Dataset")
             arch_str = saved_comp.get("arch_b", "Model B")
 
+    active_eval_model = model if nav_mode == "Single Model Mission" else saved_comp["model_a"]
+
+    # Initialize coordinates dynamically if not present
+    if "rover_start_x1" not in st.session_state and active_eval_model is not None:
+        try:
+            auto_s, auto_t = find_safe_waypoints(active_eval_model)
+            st.session_state["rover_start_x1"] = auto_s[0]
+            st.session_state["rover_start_x2"] = auto_s[1]
+            st.session_state["rover_target_x1"] = auto_t[0]
+            st.session_state["rover_target_x2"] = auto_t[1]
+        except Exception:
+            st.session_state["rover_start_x1"] = -1.80
+            st.session_state["rover_start_x2"] = 1.20
+            st.session_state["rover_target_x1"] = 1.20
+            st.session_state["rover_target_x2"] = 0.70
+
     # ---------------- Sidebar Controls ----------------
     with st.sidebar:
         st.header("Rover Navigation Controls")
         st.subheader("1. Route Waypoints")
+
+        # Auto-Detect Safe Route button
+        if st.button("Auto-Detect Safe Route", width="stretch", key="btn_auto_safe_route", help="Queries the active neural network to discover valid Start and Target waypoints in free space (P < 0.20)."):
+            if active_eval_model is not None:
+                auto_s, auto_t = find_safe_waypoints(active_eval_model)
+                st.session_state["rover_start_x1"] = auto_s[0]
+                st.session_state["rover_start_x2"] = auto_s[1]
+                st.session_state["rover_target_x1"] = auto_t[0]
+                st.session_state["rover_target_x2"] = auto_t[1]
+                st.rerun()
 
         # Preset routes
         st.caption("Quick Preset Waypoints:")
@@ -2691,19 +2717,19 @@ def render_neural_pathfinding_tab():
         target_x2 = st.slider("Target Goal x2", -2.4, 2.4, st.session_state.get("rover_target_x2", 0.70), 0.05, key="rover_target_x2")
 
         # Live coordinate guidance and obstacle warning
-        chk_model = model if nav_mode == "Single Model Mission" else saved_comp["model_a"]
-        with no_grad():
-            pts_t = Tensor(np.array([[start_x1, start_x2], [target_x1, target_x2]], dtype=np.float32), requires_grad=False)
-            pts_log = chk_model(pts_t).data
-            exp_p = np.exp(pts_log - np.max(pts_log, axis=-1, keepdims=True))
-            probs_p = exp_p / np.sum(exp_p, axis=-1, keepdims=True)
-            start_haz = float(probs_p[0, 1])
-            target_haz = float(probs_p[1, 1])
+        if active_eval_model is not None:
+            with no_grad():
+                pts_t = Tensor(np.array([[start_x1, start_x2], [target_x1, target_x2]], dtype=np.float32), requires_grad=False)
+                pts_log = active_eval_model(pts_t).data
+                exp_p = np.exp(pts_log - np.max(pts_log, axis=-1, keepdims=True))
+                probs_p = exp_p / np.sum(exp_p, axis=-1, keepdims=True)
+                start_haz = float(probs_p[0, 1])
+                target_haz = float(probs_p[1, 1])
 
-        if target_haz > 0.50:
-            st.warning(f"Target is inside an obstacle zone ({target_haz*100:.1f}% hazard)! The rover cannot enter obstacles.")
-        if start_haz > 0.50:
-            st.warning(f"Start is inside an obstacle zone ({start_haz*100:.1f}% hazard)! Choose a position in free space.")
+            if target_haz > 0.50:
+                st.warning(f"Target is inside an obstacle zone ({target_haz*100:.1f}% hazard). Use 'Auto-Detect Safe Route' to snap to open space.")
+            if start_haz > 0.50:
+                st.warning(f"Start is inside an obstacle zone ({start_haz*100:.1f}% hazard). Use 'Auto-Detect Safe Route' to snap to open space.")
 
         with st.expander("Physical Simulation Tuning", expanded=True):
             step_size = st.slider("Step Size (Speed)", 0.04, 0.25, 0.12, 0.01, key="rover_step_size")

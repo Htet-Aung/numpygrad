@@ -80,4 +80,4 @@ This document tracks development progress across all phases and milestones for *
 - [x] Configure hot-reloading in `.streamlit/config.toml` and single-click startup runners (`dev.bat`, `dev.ps1`) `[DONE]`
 - [x] Packaging configuration in `pyproject.toml` supporting editable installation (`pip install -e .`) and app extras (`pip install -e ".[app]"`) `[DONE]`
 - [x] Master documentation (`README.md`, `docs/PRD.md`, `docs/TASK_PROGRESS.md`) updated and verified `[DONE]`
-- [x] Full test suite passing with 100% success rate (**142/142 passed**) `[DONE]`
+- [x] Full test suite passing with 100% success rate (**143/143 passed**) `[DONE]`

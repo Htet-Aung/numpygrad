@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Dependencies](https://img.shields.io/badge/Dependencies-Pure%20NumPy-brightgreen.svg)](#)
-[![Tests: 142/142 Passed](https://img.shields.io/badge/Tests-142%2F142%20Passed-success.svg)](#)
+[![Tests: 143/143 Passed](https://img.shields.io/badge/Tests-143%2F143%20Passed-success.svg)](#)
 
 A transparent, educational deep learning library and dynamic tensor automatic differentiation engine built from scratch using **pure Python and NumPy**—with **zero external deep learning framework dependencies** (no PyTorch, JAX, TensorFlow, or Keras).
 
@@ -189,7 +189,7 @@ streamlit run app/app.py
 1. **2D Decision Boundary Studio:**
    - **Single Model Studio:** Interactive synthetic topology selector (Two Moons, Circles, Spirals) with full-span decision contours, smooth surface rendering, explicit $P=0.5$ decision border, live loss/accuracy convergence curves, "Model Ready" status card, direct **Click-to-Predict** on interactive Plotly decision surfaces (`predict_point` under `no_grad()`) with active gold star marker overlay, and expandable **Engine Internals & Computation Trace** drawer (step-by-step tensor activations, Log-Sum-Exp trick numerical breakdown, parameter diagnostics, and layer-by-layer **Gradient Flow Telemetry** bar chart).
    - **Model Capacity Comparison (A vs B):** Side-by-side comparative laboratory evaluating two distinct architectures (e.g. Shallow MLP vs Deep MLP, Tanh vs ReLU) on identical mini-batches, comparing decision boundary complexity, parameter counts, synchronized dual click-to-predict telemetry, and comparative gradient flow diagnostics.
-2. **Autonomous Neural Pathfinding & Navigation Race:** Interactive robotics obstacle avoidance simulator where learned classification boundaries act as **dynamic artificial potential fields**. Features forward sensory ray-casting color-coded by hazard severity (Green clear, Yellow warning, Red breach), interactive step playback scrubbing, real-time route presets, comprehensive telemetry (Mission Status, Distance, Collisions, Max Hazard, Inferences), and a side-by-side **Dual-Model Navigation Race (Model A vs Model B)** demonstrating how network capacity and boundary smoothness govern obstacle navigation success.
+2. **Autonomous Neural Pathfinding & Navigation Race:** Interactive robotics obstacle avoidance simulator where learned classification boundaries act as **dynamic artificial potential fields**. Features dynamic safe waypoint discovery (`find_safe_waypoints` in safe territory $P < 0.20$), forward sensory ray-casting color-coded by hazard severity (Green clear, Yellow warning, Red breach), tangential wall-following steering to eliminate local minima traps, interactive step playback scrubbing, comprehensive telemetry (Mission Status, Distance, Collisions, Max Hazard, Inferences), and a side-by-side **Dual-Model Navigation Race (Model A vs Model B)** demonstrating how network capacity and boundary smoothness govern obstacle navigation success.
 3. **Handwritten Digit Recognition:** Interactive drawing canvas with Brush Width slider, native Undo/Redo/Clear stroke history state management, pure NumPy connected component segmentation for multi-digit recognition (1-digit, 2-digit, or arbitrary sequence), left-to-right inference, position breakdown badges, and interactive Plotly class probability distribution bar charts evaluated from `examples/mnist_mlp.ng`.
 
 ---

@@ -184,3 +184,90 @@ def simulate_rover_path(
         "steps_taken": len(trajectory) - 1,
         "final_distance": final_distance,
     }
+
+
+def find_safe_waypoints(
+    model: nn.Module,
+    grid_bounds: Tuple[float, float] = (-2.0, 2.0),
+    resolution: int = 35,
+    max_hazard: float = 0.20,
+    min_distance: float = 2.0,
+) -> Tuple[Tuple[float, float], Tuple[float, float]]:
+    """
+    Dynamically discovers a pair of valid Start and Target waypoints located strictly
+    in safe free-space territory (Class 0, P(Class 1) < max_hazard) across the decision field.
+
+    Parameters
+    ----------
+    model : nn.Module
+        Trained 2D neural network classification model.
+    grid_bounds : Tuple[float, float]
+        Coordinate span [min_val, max_val] along each axis.
+    resolution : int
+        Number of mesh samples per axis.
+    max_hazard : float
+        Upper bound on P(Class 1) to qualify as a safe waypoint.
+    min_distance : float
+        Minimum Euclidean distance desired between Start and Target.
+
+    Returns
+    -------
+    Tuple[Tuple[float, float], Tuple[float, float]]
+        (start_pos, target_pos) as rounded (x, y) coordinate pairs.
+    """
+    model.eval()
+
+    xs = np.linspace(grid_bounds[0], grid_bounds[1], resolution, dtype=np.float32)
+    ys = np.linspace(grid_bounds[0], grid_bounds[1], resolution, dtype=np.float32)
+    grid_x, grid_y = np.meshgrid(xs, ys)
+    grid_points = np.stack([grid_x.ravel(), grid_y.ravel()], axis=-1)
+
+    with no_grad():
+        t_in = Tensor(grid_points, requires_grad=False)
+        logits = model(t_in).data
+        exp_logits = np.exp(logits - np.max(logits, axis=-1, keepdims=True))
+        probs = exp_logits / np.sum(exp_logits, axis=-1, keepdims=True)
+        hazards = probs[:, 1]
+
+    # Find safe candidates
+    safe_mask = hazards < max_hazard
+    if not np.any(safe_mask):
+        k = max(2, len(hazards) // 10)
+        sorted_indices = np.argsort(hazards)
+        safe_indices = sorted_indices[:k]
+    else:
+        safe_indices = np.where(safe_mask)[0]
+
+    safe_points = grid_points[safe_indices]
+
+    # Partition into left and right quadrants
+    left_mask = safe_points[:, 0] < -0.4
+    right_mask = safe_points[:, 0] > 0.4
+
+    best_pair = None
+
+    if np.any(left_mask) and np.any(right_mask):
+        left_pts = safe_points[left_mask]
+        right_pts = safe_points[right_mask]
+        if len(left_pts) > 60:
+            left_pts = left_pts[:: max(1, len(left_pts) // 60)]
+        if len(right_pts) > 60:
+            right_pts = right_pts[:: max(1, len(right_pts) // 60)]
+
+        dists = np.linalg.norm(left_pts[:, None, :] - right_pts[None, :, :], axis=-1)
+        max_idx = np.unravel_index(np.argmax(dists), dists.shape)
+        if dists[max_idx] >= min_distance:
+            best_pair = (left_pts[max_idx[0]], right_pts[max_idx[1]])
+
+    if best_pair is None:
+        sample_pts = safe_points
+        if len(sample_pts) > 100:
+            sample_pts = sample_pts[:: max(1, len(sample_pts) // 100)]
+        dists = np.linalg.norm(sample_pts[:, None, :] - sample_pts[None, :, :], axis=-1)
+        max_idx = np.unravel_index(np.argmax(dists), dists.shape)
+        best_pair = (sample_pts[max_idx[0]], sample_pts[max_idx[1]])
+
+    start_pt = (round(float(best_pair[0][0]), 2), round(float(best_pair[0][1]), 2))
+    target_pt = (round(float(best_pair[1][0]), 2), round(float(best_pair[1][1]), 2))
+
+    return start_pt, target_pt
