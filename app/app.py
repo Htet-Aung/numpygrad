@@ -777,53 +777,60 @@ def render_mnist_inference_tab():
         components.html(
             """
             <script>
-            const applyCanvasStyles = () => {
-                const iframes = window.parent.document.querySelectorAll('iframe');
-                iframes.forEach(iframe => {
-                    try {
-                        const doc = iframe.contentDocument || iframe.contentWindow.document;
-                        if (doc && !doc.getElementById('canvas-toolbar-override')) {
-                            const style = doc.createElement('style');
-                            style.id = 'canvas-toolbar-override';
-                            style.innerHTML = `
-                                /* Hide Download / Save button */
-                                button:first-child,
-                                button[title*="Download"] {
-                                    display: none !important;
+            function styleCanvasButtons() {
+                try {
+                    const iframes = window.parent.document.querySelectorAll('iframe');
+                    iframes.forEach(iframe => {
+                        try {
+                            const doc = iframe.contentDocument || iframe.contentWindow.document;
+                            if (doc && doc.querySelector('canvas')) {
+                                let style = doc.getElementById('canvas-custom-toolbar-style');
+                                if (!style) {
+                                    style = doc.createElement('style');
+                                    style.id = 'canvas-custom-toolbar-style';
+                                    doc.head.appendChild(style);
                                 }
+                                style.innerHTML = `
+                                    /* 1. Hide the Download / Save button completely */
+                                    button:first-child,
+                                    button[title*="Download"],
+                                    button[title*="download"],
+                                    .button-download {
+                                        display: none !important;
+                                    }
 
-                                /* Style Undo, Redo, Trash buttons with contrast */
-                                button {
-                                    background-color: #2b2d3a !important;
-                                    border: 1px solid #4a4d60 !important;
-                                    border-radius: 6px !important;
-                                    padding: 4px 8px !important;
-                                    margin-right: 8px !important;
-                                    cursor: pointer !important;
-                                    transition: all 0.2s ease !important;
-                                }
-                                button:hover {
-                                    background-color: #3b3f54 !important;
-                                    border-color: #6c7086 !important;
-                                }
+                                    /* 2. Style Undo, Redo, and Trash buttons */
+                                    button {
+                                        background-color: #2D3139 !important;
+                                        border: 1px solid #4E5569 !important;
+                                        border-radius: 6px !important;
+                                        margin: 4px 4px !important;
+                                        padding: 6px 10px !important;
+                                        cursor: pointer !important;
+                                        opacity: 1 !important;
+                                    }
+                                    button:hover {
+                                        background-color: #3E4452 !important;
+                                        border-color: #70788C !important;
+                                    }
 
-                                /* Force SVG icons to be bright white */
-                                button svg,
-                                button svg path {
-                                    fill: #FFFFFF !important;
-                                    stroke: #FFFFFF !important;
-                                    color: #FFFFFF !important;
-                                }
-                            `;
-                            doc.head.appendChild(style);
+                                    /* 3. Force the icons to be bright white */
+                                    button svg,
+                                    button svg path {
+                                        fill: #FFFFFF !important;
+                                        stroke: #FFFFFF !important;
+                                        color: #FFFFFF !important;
+                                    }
+                                `;
+                            }
+                        } catch (err) {
+                            // Ignore cross-origin access attempts on other frames
                         }
-                    } catch (e) {
-                        // Catch any cross-origin safety checks
-                    }
-                });
-            };
-            applyCanvasStyles();
-            setInterval(applyCanvasStyles, 250);
+                    });
+                } catch (e) {}
+            }
+            // Run continuously to handle Streamlit re-renders
+            setInterval(styleCanvasButtons, 100);
             </script>
             """,
             height=0,
