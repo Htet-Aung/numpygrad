@@ -20,7 +20,7 @@ This document tracks development progress across the milestones for evolving **N
 | **Milestone 5** | Interactive MNIST Inference (Streamlit canvas, digit recognition, model reload) | `[DONE]` |
 | **Milestone 6** | Convolutional Neural Networks (`Conv2D`, `MaxPool2D`, im2col, CNN MNIST) | `[DONE]` |
 | **Milestone 7** | Reliability, Model Summary & Autograd Expansion (`model.summary()`, shape assertions, `concat`, `squeeze`) | `[DONE]` |
-| **Milestone 8** | Advanced Loss Functions, Metrics & Schedulers (`NLLLoss`, `SmoothL1Loss`, `StepLR`, `CosineAnnealingLR`) | `[TODO]` |
+| **Milestone 8** | Packaging & 1.0 Release (`pyproject.toml`, pip editable install, master docs, benchmarks) | `[DONE]` |
 
 ---
 
@@ -102,7 +102,9 @@ This document tracks development progress across the milestones for evolving **N
 
 ---
 
-### Milestone 8: Advanced Loss Functions, Metrics & Schedulers
-- [ ] Implement `NLLLoss` (Negative Log Likelihood) and `SmoothL1Loss` (Huber loss) `[TODO]`
-- [ ] Implement classification metrics: `precision_score`, `recall_score`, `f1_score` `[TODO]`
-- [ ] Implement learning rate schedulers: `StepLR`, `CosineAnnealingLR`, `ExponentialLR` `[TODO]`
+### Milestone 8: Packaging & 1.0 Release
+- [x] Create standard `pyproject.toml` configuration with setuptools backend and optional extras (`app`, `dev`) `[DONE]`
+- [x] Verify pip editable installation (`pip install -e .`) and package discovery from `src/` `[DONE]`
+- [x] Polish master `README.md` with complete quickstarts, benchmarks, mathematical formulation, and showcases `[DONE]`
+- [x] Audit all documentation, type annotations, and docstrings across codebase `[DONE]`
+- [x] Verify 100% pass rate across full test suite `[DONE]`

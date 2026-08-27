@@ -2,6 +2,8 @@
 NumPyGrad: A pure NumPy automatic differentiation & deep learning library.
 """
 
+__version__ = "1.0.0"
+
 from numpygrad.core.tensor import (
     Tensor,
     _unbroadcast,

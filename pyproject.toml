@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "numpygrad"
+version = "1.0.0"
+description = "A modular, educational deep learning library and dynamic tensor autograd engine built completely from scratch using pure Python and NumPy."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [
+    { name = "NumPyGrad Contributors" }
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Mathematics",
+]
+dependencies = [
+    "numpy>=1.24.0",
+]
+
+[project.optional-dependencies]
+app = [
+    "streamlit>=1.30.0",
+    "streamlit-drawable-canvas>=0.9.0",
+    "matplotlib>=3.7.0",
+    "scikit-learn>=1.2.0",
+]
+dev = [
+    "pytest>=7.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/Htet-Aung/numpygrad"
+Repository = "https://github.com/Htet-Aung/numpygrad"
+
+[tool.setuptools.packages.find]
+where = ["src"]

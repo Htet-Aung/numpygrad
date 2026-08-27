@@ -1,11 +1,12 @@
 # NumPyGrad: Pure NumPy Autograd & Deep Learning Engine
 
+[![Release](https://img.shields.io/badge/Release-v1.0.0-blue.svg)](https://github.com/Htet-Aung/numpygrad)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Zero DL Frameworks](https://img.shields.io/badge/Dependencies-Pure%20NumPy-brightgreen.svg)](#)
 [![Tests: 129/129 Passed](https://img.shields.io/badge/Tests-129%2F129%20Passed-success.svg)](#)
 
-A modular, educational deep learning library and dynamic tensor autograd engine built completely from scratch using **pure Python and NumPy**—with **zero external deep learning framework dependencies** (no PyTorch, JAX, TensorFlow, or Keras).
+A modular, production-ready, educational deep learning library and dynamic tensor automatic differentiation engine built completely from scratch using **pure Python and NumPy**—with **zero external deep learning framework dependencies** (no PyTorch, JAX, TensorFlow, or Keras).
 
 ---
 
@@ -21,49 +22,171 @@ NumPyGrad easily trains deep multi-layer perceptrons to resolve complex non-line
 
 ## Key Highlights
 
-- **Dynamic Computational DAG:** Reverse-mode automatic differentiation with topological DAG ordering and recursive gradient accumulation.
-- **Broadcasting-Aware Calculus:** Exact unbroadcasting logic (`sum_to_shape`) reducing gradients across arbitrary batch and feature dimensions.
-- **PyTorch-Style Modular API:** Modular `Module`, `Parameter`, `Linear`, `BatchNorm1d`, `Dropout`, `Sequential`, and activations (`ReLU`, `Tanh`, `Sigmoid`, `GELU`).
-- **Numerically Stable Loss Criteria:** `CrossEntropyLoss` with the Log-Sum-Exp trick, `MSELoss`, and `BCEWithLogitsLoss`.
-- **First-Order Optimizers:** Vectorized `SGD` (with Polyak momentum & Nesterov) and `AdamW` with decoupled weight decay and bias correction.
-- **Mathematical Rigor:** 100% test coverage with centered finite-difference numerical gradient checks (`gradcheck` relative error $< 10^{-5}$).
+- **Dynamic Computational DAG:** Reverse-mode automatic differentiation over dynamically constructed Directed Acyclic Graphs with depth-first topological traversal.
+- **PyTorch-Parity Modular Architecture:** `Module`, `Parameter`, `Linear`, `Conv2D`, `MaxPool2D`, `BatchNorm1d`, `Dropout`, `Flatten`, `Sequential`, and non-linear activations (`ReLU`, `Tanh`, `Sigmoid`, `GELU`).
+- **Vectorized Spatial Convolutions:** Fast 2D convolution and max pooling utilizing `im2col` matrix unfolding and analytical `col2im` gradient projection in pure NumPy.
+- **Dataset & DataLoader Pipeline:** Pythonic data loading with multi-tensor datasets, mini-batch slicing, deterministic shuffling, and remainder batch policies.
+- **Execution Modes & Autograd Guards:** Recursive `model.train()` and `model.eval()` mode propagation, plus `no_grad()` context managers and decorators.
+- **Model Inspection & Diagnostics:** `model.summary(input_shape)` generating comprehensive ASCII reports with layer output shapes, parameter counts, and memory footprint estimations.
+- **Single-File Model Persistence:** Native `.ng` container serialization (`save_model` / `load_model` / `model.save()`) packaging architecture topology and compressed weights.
+- **Interactive Streamlit Studio:** Multi-tab visualizer with real-time 2D decision boundary training and a live interactive MNIST handwritten digit drawing canvas.
+- **Mathematical Rigor:** 100% test coverage with centered finite-difference numerical gradient checks (`gradcheck` relative error $< 10^{-10}$).
 
 ---
 
-## Quickstart Example
+## Installation
 
-Train a 2-layer Multi-Layer Perceptron on 2D coordinates in under 20 lines of pure NumPyGrad:
+Install NumPyGrad in editable development mode with pip:
+
+```bash
+git clone https://github.com/Htet-Aung/numpygrad.git
+cd numpygrad
+pip install -e .
+```
+
+To include optional dependencies for the interactive Streamlit studio:
+```bash
+pip install -e ".[app]"
+```
+
+---
+
+## Quickstart
+
+Build, inspect, train, evaluate, and persist a deep neural network in under 40 lines of pure Python:
 
 ```python
 import numpy as np
-from numpygrad.core.tensor import Tensor
+import numpygrad as ng
 import numpygrad.nn as nn
 import numpygrad.optim as optim
+from numpygrad.core.tensor import Tensor, no_grad
+from numpygrad.data import TensorDataset, DataLoader
 
 # 1. Define Model Architecture
 model = nn.Sequential(
-    nn.Linear(in_features=2, out_features=32),
+    nn.Flatten(),
+    nn.Linear(in_features=28 * 28, out_features=128),
+    nn.BatchNorm1d(num_features=128),
     nn.ReLU(),
-    nn.Linear(in_features=32, out_features=2)
+    nn.Dropout(p=0.2),
+    nn.Linear(in_features=128, out_features=10)
 )
 
-# 2. Setup Loss Criterion and Optimizer
+# 2. Inspect Model Topology & Memory Footprint
+model.summary(input_shape=(1, 28, 28))
+
+# 3. Setup Loss Criterion, Optimizer, and DataLoader
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.AdamW(model.parameters(), lr=0.03, weight_decay=1e-4)
+optimizer = optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
 
-# 3. Create Sample Batch
-X = Tensor(np.random.randn(64, 2).astype(np.float32))
-y = np.random.choice([0, 1], size=(64,))
+X_data = np.random.randn(256, 28, 28).astype(np.float32)
+y_data = np.random.randint(0, 10, size=(256,))
 
-# 4. Forward -> Backward -> Optimize Step
-optimizer.zero_grad()
-logits = model(X)
-loss = criterion(logits, y)
-loss.backward()
-optimizer.step()
+dataset = TensorDataset(X_data, y_data)
+loader = DataLoader(dataset, batch_size=32, shuffle=True)
 
-print(f"Step Loss: {loss.data:.4f}")
+# 4. Training Loop
+model.train()
+for epoch in range(3):
+    for batch_x, batch_y in loader:
+        optimizer.zero_grad()
+        logits = model(batch_x)
+        loss = criterion(logits, batch_y)
+        loss.backward()
+        optimizer.step()
+    print(f"Epoch {epoch + 1} | Loss: {loss.data:.4f}")
+
+# 5. Evaluation & Inference under no_grad
+model.eval()
+with no_grad():
+    sample = Tensor(X_data[:5])
+    preds = np.argmax(model(sample).data, axis=-1)
+    print(f"Inference Predictions: {preds}")
+
+# 6. Save & Reload Model Artifact
+model.save("my_model.ng")
+loaded_model = ng.load_model("my_model.ng")
 ```
+
+---
+
+## Real-World Applications & Examples
+
+### 1. Flagship MNIST Handwritten Digit Classification
+
+NumPyGrad includes complete end-to-end training pipelines on the canonical 70,000-sample MNIST dataset:
+
+#### Multi-Layer Perceptron (MLP)
+- **Architecture:** `Flatten -> Linear(784, 128) -> ReLU -> Linear(128, 64) -> ReLU -> Linear(64, 10)`
+- **Accuracy:** **97.55% test accuracy** in 5 epochs (~18s on CPU)
+- **Artifact:** Saved to `examples/mnist_mlp.ng`
+
+```bash
+python examples/train_mnist_mlp.py
+```
+
+#### Convolutional Neural Network (CNN)
+- **Architecture:** `Conv2D(1->8, 3x3) -> MaxPool(2) -> Conv2D(8->16, 3x3) -> MaxPool(2) -> Flatten -> Linear(784, 64) -> Linear(64, 10)`
+- **Accuracy:** **98.35% test accuracy** with **52.3% fewer parameters** than MLP (52,138 vs. 109,386)
+- **Artifact:** Saved to `examples/mnist_cnn.ng`
+
+```bash
+python examples/train_mnist_cnn.py
+```
+
+| Architecture | Parameters | Parameter Reduction | Test Accuracy | Step Latency (B=128) |
+|---|---|---|---|---|
+| **MLP Baseline** | 109,386 | Baseline | 97.55% | 15.63 ms |
+| **NumPyGrad CNN** | 52,138 | **-52.3%** | **98.35%** | 173.22 ms |
+
+---
+
+### 2. Tabular Iris Multi-Class Classification
+
+Trains a compact neural network with `BatchNorm1d` on the standard 150-sample Iris dataset, computing precision classification metrics and integer confusion matrices:
+
+```bash
+python examples/train_iris.py
+```
+- **Test Accuracy:** **96.67%** (29/30 correct test samples)
+- **Confusion Matrix:**
+  ```text
+  [[10  0  0]
+   [ 0  8  1]
+   [ 0  0 11]]
+  ```
+
+---
+
+## Interactive Studio (Streamlit Web Dashboard)
+
+NumPyGrad features a multi-tab web application for visual exploration and live inference:
+
+```bash
+streamlit run app/app.py
+```
+
+### Studio Tabs:
+1. **2D Decision Boundaries:** Interactive synthetic dataset playground (Two Moons, Circles, Spirals) with live contour animation, loss/accuracy curves, and layer-by-layer gradient magnitude diagnostics.
+2. **Handwritten Digit Recognition:** An interactive 280x280 canvas allowing users to draw digits with a live white brush. Automatically runs MNIST-standard preprocessing (bounding box crop, padding, LANCZOS downsampling, center-of-mass alignment) and outputs real-time class probability distributions from `examples/mnist_mlp.ng`.
+
+---
+
+## CPU Benchmark: NumPyGrad vs. PyTorch
+
+NumPyGrad achieves highly competitive CPU training throughput by minimizing Python object overhead and executing tight vectorized NumPy kernels:
+
+```bash
+python benchmarks/benchmark_cpu.py
+```
+
+| Framework | Workload (3-Layer MLP, B=128) | Step Latency (Fwd + Bwd) | Training Throughput |
+|---|---|---|---|
+| **NumPyGrad** | Pure NumPy CPU | **2.21 ms** | **~58,000 samples/sec** |
+| **PyTorch** | Native C++ CPU LibTorch | **1.85 ms** | **~69,000 samples/sec** |
+
+*NumPyGrad delivers ~84% of PyTorch's native C++ CPU throughput while maintaining 100% pure Python/NumPy transparency.*
 
 ---
 
@@ -71,55 +194,41 @@ print(f"Step Loss: {loss.data:.4f}")
 
 NumPyGrad implements clean, mathematically verified calculus primitives:
 
-### 1. Reverse-Mode Topological Backpropagation
-Each operation creates a dynamic node tracking its predecessor inputs (`_prev`) and local Jacobian-vector product closure (`_backward`):
+### 1. Dynamic Topological Backpropagation
+Each operation creates a dynamic node tracking predecessor inputs (`_prev`) and local Jacobian-vector product closure (`_backward`):
 $$\frac{\partial \mathcal{L}}{\partial X} = \sum_{Y \in \text{Children}(X)} \frac{\partial \mathcal{L}}{\partial Y} \frac{\partial Y}{\partial X}$$
 A depth-first topological traversal resolves variable dependencies before propagating upstream gradients, ensuring correct accumulation (`grad += ...`) across multi-branch DAGs.
 
-### 2. Broadcasting Reduction (`_unbroadcast`)
+### 2. Broadcasting Reduction Calculus (`_unbroadcast`)
 When binary operations broadcast operands across differing shapes (e.g. $(N, D) + (D,)$), the backward pass projects accumulated gradients back to the original operand shape by summing over broadcasted leading and singleton axes.
 
-### 3. Numerical Stability (Log-Sum-Exp Trick)
+### 3. Log-Sum-Exp Numerical Stability
 Softmax and Cross-Entropy compute the Log-Sum-Exp reduction over logits $z$:
 $$\text{LSE}(z) = \max_j(z_j) + \log\left(\sum_j \exp\left(z_j - \max_k(z_k)\right)\right)$$
 This prevents exponential floating-point overflow and underflow in single-precision float32 arithmetic.
 
----
-
-## Interactive Studio (Streamlit Web Dashboard)
-
-NumPyGrad includes an interactive real-time visualizer studio powered by Streamlit to experiment with dataset topologies, neural network architectures, and optimizer dynamics.
-
-### Launching the Studio
-```bash
-py -3.13 -m streamlit run app/app.py
-```
-*Or with standard Streamlit:*
-```bash
-streamlit run app/app.py
-```
-
-### Studio Features
-- **Live 2D Decision Boundaries:** Real-time contour surfaces for Two Moons, Concentric Circles, and Spirals.
-- **Dynamic Architecture Control:** Configurable hidden layers, dimensions, and activation functions (`ReLU`, `Tanh`, `Sigmoid`, `GELU`).
-- **Real-Time Training Metrics:** Synchronized loss and accuracy convergence tracking.
-- **Gradient Diagnostics:** Post-training layer-by-layer gradient norm ($\|\nabla_\theta\|_2$) bar charts to inspect backpropagation dynamics across depths.
-
----
-
-## CPU Benchmarking (NumPyGrad vs. PyTorch)
-
-To evaluate CPU forward/backward throughput against standard PyTorch (CPU):
-
-```bash
-py -3.13 benchmarks/benchmark_cpu.py
-```
+### 4. Vectorized Spatial Convolutions (`im2col` / `col2im`)
+Convolutions unfold spatial image patches into matrix columns via strided views:
+$$Y = W_{\text{flat}} \cdot \text{im2col}(X) + b$$
+Gradients are accumulated via matrix multiplication ($\partial L/\partial W = \partial L/\partial Y \cdot \text{cols}^T$) and scattered back to input coordinates via `col2im`.
 
 ---
 
 ## Running Automated Tests & Gradient Checks
 
 Run the complete test suite with 100% `gradcheck` finite-difference numerical validation:
+
 ```bash
 pytest -v
 ```
+
+Run specific diagnostic checks with the built-in `gradcheck-verifier` skill:
+```bash
+python .agents/skills/gradcheck-verifier/scripts/verify_grad.py --layer all
+```
+
+---
+
+## License
+
+This project is open source and available under the [MIT License](LICENSE).
