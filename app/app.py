@@ -31,7 +31,6 @@ from numpygrad.utils.data import TensorDataset, DataLoader
 
 st.set_page_config(
     page_title="NumPyGrad Studio",
-    page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -363,7 +362,7 @@ def plot_gradient_norms(model: nn.Module) -> plt.Figure:
 # -----------------------------------------------------------------------------
 
 def main():
-    st.markdown('<div class="main-header">⚡ NumPyGrad Interactive Studio</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">NumPyGrad Interactive Studio</div>', unsafe_allow_html=True)
     st.markdown(
         '<div class="sub-header">A Pure NumPy Dynamic Computational Graph & Deep Learning Playground with Zero External DL Frameworks</div>',
         unsafe_allow_html=True,
@@ -371,7 +370,7 @@ def main():
 
     # ---------------- Sidebar Controls ----------------
     with st.sidebar:
-        st.header("⚙️ Experiment Controls")
+        st.header("Experiment Controls")
         
         # 1. Dataset Settings
         st.subheader("1. Dataset Configuration")
@@ -415,7 +414,7 @@ def main():
     # Top Control Bar
     col_btn, col_info = st.columns([1, 3])
     with col_btn:
-        start_training = st.button("🚀 Start Training", type="primary", use_container_width=True)
+        start_training = st.button("Start Training", type="primary", use_container_width=True)
     with col_info:
         total_params = (2 * hidden_dim + hidden_dim) + (num_layers - 1) * (hidden_dim * hidden_dim + hidden_dim) + (hidden_dim * 2 + 2)
         st.info(f"Dataset: **{dataset_name}** (N={n_samples}) | Architecture: **{num_layers}x {hidden_dim}d** ({total_params} Trainable Parameters) | Optimizer: **{optimizer_name}** (lr={lr})")
@@ -496,11 +495,11 @@ def main():
                 plt.close(fig_b)
                 plt.close(fig_m)
 
-        st.success(f"🎉 Training converged in {time.time() - start_time:.2f}s! Final Accuracy: **{acc_history[-1]:.2f}%** | Final Loss: **{loss_history[-1]:.4f}**")
+        st.success(f"Training converged in {time.time() - start_time:.2f}s | Final Accuracy: **{acc_history[-1]:.2f}%** | Final Loss: **{loss_history[-1]:.4f}**")
 
         # ---------------- Post-Training Gradient Norm Diagnostic ----------------
         with diag_placeholder.container():
-            st.subheader("🔬 Post-Training Diagnostics: Gradient Propagation")
+            st.subheader("Post-Training Diagnostics: Gradient Propagation")
             fig_grad = plot_gradient_norms(model)
             st.pyplot(fig_grad)
             plt.close(fig_grad)

@@ -4,7 +4,7 @@ All contributors and AI agents working on **NumPyGrad** must strictly adhere to 
 
 ---
 
-## 🛑 Rule 1: Absolute Dependency Ban on Deep Learning Frameworks
+## Rule 1: Absolute Dependency Ban on Deep Learning Frameworks
 - **Zero DL Frameworks**: Under no circumstances may `torch`, `jax`, `tensorflow`, `keras`, `autograd`, or any external automatic differentiation library be imported or installed in the core source or test suites.
 - **Allowed Libraries**:
   - `numpy` (the sole mathematical and array foundation).
@@ -14,7 +14,7 @@ All contributors and AI agents working on **NumPyGrad** must strictly adhere to 
 
 ---
 
-## 📐 Rule 2: Analytical Gradients & Mandatory `gradcheck` Verification
+## Rule 2: Analytical Gradients & Mandatory `gradcheck` Verification
 - **Analytical `_backward()`**: Every tensor operation, activation, layer, and loss function must implement an exact analytical gradient calculation.
 - **Finite-Difference Numerical Check**:
   - Every operation must be tested using a finite-difference centered approximation:
@@ -25,7 +25,7 @@ All contributors and AI agents working on **NumPyGrad** must strictly adhere to 
 
 ---
 
-## 🛡️ Rule 3: Strict Numerical Stability
+## Rule 3: Strict Numerical Stability
 - **Softmax & Cross-Entropy**: Must utilize the Log-Sum-Exp trick to prevent exponential overflow/underflow:
   $$\text{LSE}(x) = \max(x) + \log\left(\sum \exp(x - \max(x))\right)$$
 - **Logarithms & Quotients**: Must guard against division-by-zero or $\log(0)$ with appropriate machine epsilon clamping ($\epsilon = 10^{-8}$ to $10^{-15}$).
@@ -33,14 +33,14 @@ All contributors and AI agents working on **NumPyGrad** must strictly adhere to 
 
 ---
 
-## 🔄 Rule 4: Dynamic DAG & Immutability Standards
+## Rule 4: Dynamic DAG & Immutability Standards
 - **Non-Destructive Graph Construction**: Forward operations must create new `Tensor` instances. In-place mutations of tensor buffers that belong to a computation graph must be prohibited or explicitly detached.
 - **Broadcasting Awareness**: Backward implementations must properly reduce broadcasted dimensions back to the original operand shape via a unified unbroadcasting helper (`sum_to_shape`).
 - **Gradient Accumulation**: When multiple downstream operations use the same tensor, gradients must accumulate additively (`grad += ...`), not overwrite (`grad = ...`).
 
 ---
 
-## 📋 Rule 5: Task Progress & Documentation Protocol
+## Rule 5: Task Progress & Documentation Protocol
 - **Agentic Tracking**: Before marking any development milestone or task as complete, you **must update `docs/TASK_PROGRESS.md`** reflecting the exact status.
 - **Status Markers**: Only use standard status indicators: `[TODO]`, `[IN PROGRESS]`, `[DONE]`.
 - **Code Comments**: Every mathematical operation must feature docstrings describing the forward math formula and analytical derivative.

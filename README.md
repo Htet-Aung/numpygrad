@@ -9,7 +9,7 @@ A modular, educational deep learning library and dynamic tensor autograd engine 
 
 ---
 
-## 🌟 Visual Showcase: Non-Linear Decision Boundary
+## Visual Showcase: Non-Linear Decision Boundary
 
 NumPyGrad easily trains deep multi-layer perceptrons to resolve complex non-linear classification manifolds (e.g. Two Moons, Concentric Circles, Spirals) via topological reverse-mode backpropagation and AdamW optimization:
 
@@ -19,7 +19,7 @@ NumPyGrad easily trains deep multi-layer perceptrons to resolve complex non-line
 
 ---
 
-## ✨ Key Highlights
+## Key Highlights
 
 - **Dynamic Computational DAG:** Reverse-mode automatic differentiation with topological DAG ordering and recursive gradient accumulation.
 - **Broadcasting-Aware Calculus:** Exact unbroadcasting logic (`sum_to_shape`) reducing gradients across arbitrary batch and feature dimensions.
@@ -30,7 +30,7 @@ NumPyGrad easily trains deep multi-layer perceptrons to resolve complex non-line
 
 ---
 
-## ⚡ Quickstart Example
+## Quickstart Example
 
 Train a 2-layer Multi-Layer Perceptron on 2D coordinates in under 20 lines of pure NumPyGrad:
 
@@ -67,7 +67,7 @@ print(f"Step Loss: {loss.data:.4f}")
 
 ---
 
-## 📐 Mathematical Core & Architecture
+## Mathematical Core & Architecture
 
 NumPyGrad implements clean, mathematically verified calculus primitives:
 
@@ -86,7 +86,7 @@ This prevents exponential floating-point overflow and underflow in single-precis
 
 ---
 
-## 🚀 Interactive Studio (Streamlit Web Dashboard)
+## Interactive Studio (Streamlit Web Dashboard)
 
 NumPyGrad includes an interactive real-time visualizer studio powered by Streamlit to experiment with dataset topologies, neural network architectures, and optimizer dynamics.
 
@@ -107,7 +107,7 @@ streamlit run app/app.py
 
 ---
 
-## 🏎️ CPU Benchmarking (NumPyGrad vs. PyTorch)
+## CPU Benchmarking (NumPyGrad vs. PyTorch)
 
 To evaluate CPU forward/backward throughput against standard PyTorch (CPU):
 
@@ -117,7 +117,7 @@ py -3.13 benchmarks/benchmark_cpu.py
 
 ---
 
-## 🧪 Running Automated Tests & Gradient Checks
+## Running Automated Tests & Gradient Checks
 
 Run the complete test suite with 100% `gradcheck` finite-difference numerical validation:
 ```bash
