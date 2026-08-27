@@ -39,14 +39,34 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    /* Hide the top header bar (Deploy button, running indicators, menu) */
+    /* Transparent header bar to keep sidebar toggle button functional */
     header[data-testid="stHeader"] {
-        visibility: hidden !important;
-        height: 0% !important;
-        position: fixed !important;
+        background: transparent !important;
+        z-index: 100 !important;
     }
 
-    /* Minimize canvas padding to maximize vertical viewport */
+    /* Hide right-side header clutter (Deploy button, main menu, footer) */
+    .stDeployButton {
+        display: none !important;
+    }
+    #MainMenu {
+        visibility: hidden !important;
+    }
+    footer {
+        visibility: hidden !important;
+    }
+    [data-testid="stToolbar"] {
+        visibility: hidden !important;
+    }
+
+    /* Ensure sidebar toggle/collapse chevron remains visible & clickable */
+    [data-testid="collapsedControl"],
+    [data-testid="stSidebarCollapseButton"] {
+        visibility: visible !important;
+        display: flex !important;
+    }
+
+    /* Minimize main content padding */
     .block-container {
         padding-top: 1rem !important;
         padding-bottom: 1rem !important;
@@ -54,10 +74,14 @@ st.markdown(
         padding-right: 2rem !important;
     }
 
-    /* Compact sidebar padding */
+    /* Eliminate large vertical gap in sidebar */
+    [data-testid="stSidebarUserContent"],
+    [data-testid="stSidebarContent"],
     section[data-testid="stSidebar"] .block-container {
-        padding-top: 1.5rem !important;
+        padding-top: 1rem !important;
         padding-bottom: 1rem !important;
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
     }
 
     /* Tighten typography margins */
@@ -72,7 +96,7 @@ st.markdown(
         font-size: 0.95rem;
         color: #6c757d;
         margin-top: 0rem !important;
-        margin-bottom: 0.75rem !important;
+        margin-bottom: 0.65rem !important;
     }
     .metric-card {
         background-color: #f8f9fa;
@@ -81,15 +105,15 @@ st.markdown(
         border: 1px solid #e9ecef;
     }
 
-    /* Reduce vertical gaps between elements and headers */
+    /* Reduce vertical margins between elements and headers */
     h1, h2, h3, h4 {
-        margin-top: 0.2rem !important;
-        margin-bottom: 0.3rem !important;
+        margin-top: 0rem !important;
+        margin-bottom: 0.25rem !important;
         padding-top: 0rem !important;
         padding-bottom: 0rem !important;
     }
     div[data-testid="stVerticalBlock"] > div {
-        gap: 0.5rem !important;
+        gap: 0.4rem !important;
     }
     </style>
     """,
