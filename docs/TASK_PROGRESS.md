@@ -14,11 +14,11 @@ This document tracks development progress across the milestones for evolving **N
 | Milestone | Description | Status |
 |---|---|---|
 | **Milestone 1** | Training Infrastructure (`Dataset`, `DataLoader`, train/eval modes, `no_grad`) | `[DONE]` |
-| **Milestone 2** | Advanced Tensor Operations & Math (Slicing, Advanced Indexing, Clamping) | `[TODO]` |
-| **Milestone 3** | Additional Neural Network Layers & Containers (`Conv2D`, `MaxPool2d`, `Flatten`, `LayerNorm`) | `[TODO]` |
-| **Milestone 4** | Advanced Loss Functions & Evaluation Metrics (`NLLLoss`, `SmoothL1Loss`, Accuracy, F1) | `[TODO]` |
-| **Milestone 5** | Learning Rate Schedulers (`StepLR`, `CosineAnnealingLR`, `ExponentialLR`) | `[TODO]` |
-| **Milestone 6** | Model Serialization & State Management (`state_dict`, `load_state_dict`, Checkpointing) | `[TODO]` |
+| **Milestone 2** | Model Persistence & Serialization (`save_model`, `load_model`, `.save()`, `.ng` container) | `[DONE]` |
+| **Milestone 3** | Advanced Tensor Operations & Math (Slicing, Advanced Indexing, Clamping) | `[TODO]` |
+| **Milestone 4** | Additional Neural Network Layers & Containers (`Conv2D`, `MaxPool2d`, `Flatten`, `LayerNorm`) | `[TODO]` |
+| **Milestone 5** | Advanced Loss Functions & Evaluation Metrics (`NLLLoss`, `SmoothL1Loss`, Accuracy, F1) | `[TODO]` |
+| **Milestone 6** | Learning Rate Schedulers (`StepLR`, `CosineAnnealingLR`, `ExponentialLR`) | `[TODO]` |
 | **Milestone 7** | Advanced First-Order Optimizers (`RMSprop`, `Adagrad`, `Adamax`) | `[TODO]` |
 | **Milestone 8** | End-to-End Deep Learning Applications & Benchmarking Suite | `[TODO]` |
 
@@ -39,7 +39,17 @@ This document tracks development progress across the milestones for evolving **N
 
 ---
 
-### Milestone 2: Advanced Tensor Operations & Math
+### Milestone 2: Model Persistence & Serialization
+- [x] Implement `save_model(model, filepath)` and `load_model(filepath)` in `src/numpygrad/serialization.py` `[DONE]`
+- [x] Serialize architecture topology to `architecture.json` and weights/buffers to `weights.npz` in `.ng` zip container `[DONE]`
+- [x] Implement `.save(filepath)`, `state_dict()`, and `load_state_dict()` on `Module` `[DONE]`
+- [x] Export `save_model` and `load_model` from root `numpygrad` package `[DONE]`
+- [x] Develop comprehensive round-trip tests in `tests/test_serialization.py` `[DONE]`
+- [x] Verify numerical prediction equivalence and error handling on corrupted/invalid files `[DONE]`
+
+---
+
+### Milestone 3: Advanced Tensor Operations & Math
 - [ ] Implement slicing (`__getitem__`, `__setitem__` with slice semantics) `[TODO]`
 - [ ] Implement tensor clamping (`clip`/`clamp`), `abs`, `exp`, `log`, `sqrt` with analytical derivatives `[TODO]`
 - [ ] Implement advanced reductions (`max`, `min`, `argmax`, `argmin`, `var`, `std`) `[TODO]`

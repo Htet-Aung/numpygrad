@@ -12,6 +12,7 @@ from numpygrad.core.tensor import (
 )
 from numpygrad.data.dataset import Dataset, TensorDataset
 from numpygrad.data.dataloader import DataLoader
+from numpygrad.serialization import save_model, load_model
 from numpygrad.utils.gradcheck import gradcheck
 import numpygrad.nn as nn
 import numpygrad.optim as optim
@@ -28,10 +29,13 @@ __all__ = [
     "Dataset",
     "TensorDataset",
     "DataLoader",
+    "save_model",
+    "load_model",
     "gradcheck",
     "nn",
     "optim",
     "data",
     "utils",
 ]
+
 

@@ -148,6 +148,21 @@ class Module:
         """Sets the module and all submodules into evaluation (inference) mode."""
         return self.train(False)
 
+    def state_dict(self, prefix: str = "") -> Dict[str, np.ndarray]:
+        """Returns a dictionary containing a whole state of the module."""
+        from numpygrad.serialization import get_model_state_dict
+        return get_model_state_dict(self, prefix=prefix)
+
+    def load_state_dict(self, state_dict: Dict[str, np.ndarray], strict: bool = True) -> None:
+        """Copies parameters and buffers from `state_dict` into this module and its descendants."""
+        from numpygrad.serialization import load_model_state_dict
+        load_model_state_dict(self, state=state_dict, strict=strict)
+
+    def save(self, filepath: str) -> None:
+        """Saves the module architecture and parameter weights to a `.ng` container file."""
+        from numpygrad.serialization import save_model
+        save_model(self, filepath)
+
     def forward(self, *args: Any, **kwargs: Any) -> Any:
         """Defines the computation performed at every call."""
         raise NotImplementedError("Subclasses of Module must implement forward()")
