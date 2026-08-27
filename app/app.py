@@ -355,7 +355,7 @@ def plot_dashboard_figures(
 
     contour = ax_b.contourf(xx, yy, Z, levels=40, cmap="Spectral_r", alpha=0.85)
     ax_b.contour(xx, yy, Z, levels=[0.5], colors="black", linewidths=1.8, linestyles="--")
-    plt.colorbar(contour, ax=ax_b, label="P(Class = 1)")
+    fig_boundary.colorbar(contour, ax=ax_b, label="P(Class = 1)")
 
     ax_b.scatter(
         X[:, 0],
@@ -368,10 +368,10 @@ def plot_dashboard_figures(
         alpha=0.9,
     )
     ax_b.set_title("Learned Decision Boundary", fontsize=11, fontweight="bold")
-    ax_b.set_xlabel("Feature $x_1$")
-    ax_b.set_ylabel("Feature $x_2$")
+    ax_b.set_xlabel("Feature x1", fontsize=10)
+    ax_b.set_ylabel("Feature x2", fontsize=10)
     ax_b.grid(True, linestyle=":", alpha=0.4)
-    plt.tight_layout()
+    fig_boundary.tight_layout()
 
     # 2. Loss & Accuracy Progression Figure
     fig_metrics, ax_loss = plt.subplots(figsize=(6, 5), dpi=120)
@@ -395,7 +395,7 @@ def plot_dashboard_figures(
     labels = [l.get_label() for l in lines]
     ax_loss.legend(lines, labels, loc="center right")
     ax_loss.set_title("Loss & Accuracy Convergence", fontsize=11, fontweight="bold")
-    plt.tight_layout()
+    fig_metrics.tight_layout()
 
     return fig_boundary, fig_metrics
 
@@ -413,7 +413,7 @@ def plot_gradient_norms(model: nn.Module) -> plt.Figure:
         grad_norms.append(norm)
 
     bars = ax.barh(layer_names, grad_norms, color="#5bc0de", edgecolor="#0275d8", alpha=0.85)
-    ax.set_xlabel(r"Gradient $\ell_2$ Norm ($\|\nabla_\theta\|_2$)", fontweight="bold")
+    ax.set_xlabel("Gradient L2 Norm", fontweight="bold")
     ax.set_title("Layer-by-Layer Gradient Magnitude Diagnostic", fontsize=11, fontweight="bold")
     ax.grid(True, linestyle=":", alpha=0.5, axis="x")
 
@@ -421,7 +421,7 @@ def plot_gradient_norms(model: nn.Module) -> plt.Figure:
         width = bar.get_width()
         ax.text(width + 0.001, bar.get_y() + bar.get_height() / 2, f"{width:.4f}", va="center", fontsize=9)
 
-    plt.tight_layout()
+    fig.tight_layout()
     return fig
 
 
@@ -542,7 +542,7 @@ def plot_probability_distribution(probs: np.ndarray) -> plt.Figure:
                 fontweight="bold",
             )
 
-    plt.tight_layout()
+    fig.tight_layout()
     return fig
 
 
