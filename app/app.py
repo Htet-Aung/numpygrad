@@ -206,9 +206,8 @@ st.markdown(
         margin: 0;
     }
 
-    /* Primary action buttons (Classify Drawing, Start Training, etc.) */
-    div.stButton > button[kind="primary"],
-    div.stButton > button {
+    /* Primary action buttons (Start Training, etc.) */
+    div.stButton > button[kind="primary"] {
         background: linear-gradient(135deg, #6366F1 0%, #4F46E5 100%) !important;
         color: #FFFFFF !important;
         font-weight: 700 !important;
@@ -220,75 +219,37 @@ st.markdown(
         transition: all 0.2s ease-in-out !important;
         margin-top: 6px !important;
     }
-    div.stButton > button:hover {
+    div.stButton > button[kind="primary"]:hover {
         background: linear-gradient(135deg, #7C3AED 0%, #6366F1 100%) !important;
         border-color: #C7D2FE !important;
         box-shadow: 0 6px 20px rgba(124, 58, 237, 0.55) !important;
         transform: translateY(-1px) !important;
         color: #FFFFFF !important;
     }
-    div.stButton > button:active {
-        transform: translateY(1px) !important;
-        box-shadow: 0 2px 6px rgba(79, 70, 229, 0.4) !important;
-    }
 
-    /* Canvas toolbar action buttons (Undo, Redo, Reset) */
-    div[data-testid="stDrawableCanvas"] button {
-        background: #1E293B !important;
-        border: 1.5px solid #475569 !important;
-        color: #F8FAFC !important;
-        border-radius: 6px !important;
-        padding: 5px 10px !important;
-        margin: 3px !important;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25) !important;
-        cursor: pointer !important;
-        transition: all 0.2s ease !important;
+    /* Reset Canvas Action Button - distinct styling before and after hover */
+    div.stButton > button:has(p:contains("Reset Canvas")),
+    div.stButton > button:has(div:contains("Reset Canvas")),
+    div.stButton > button[data-testid="baseButton-secondary"] {
+        background: linear-gradient(135deg, #4C0519 0%, #881337 100%) !important;
+        color: #FFE4E6 !important;
+        font-weight: 600 !important;
+        font-size: 0.95rem !important;
+        border: 1.5px solid #BE123C !important;
+        border-radius: 8px !important;
+        padding: 0.45rem 1rem !important;
+        box-shadow: 0 2px 8px rgba(190, 18, 60, 0.3) !important;
+        transition: all 0.2s ease-in-out !important;
+        margin-top: 6px !important;
     }
-    div[data-testid="stDrawableCanvas"] button:hover {
-        background: #3B82F6 !important;
-        border-color: #93C5FD !important;
-        box-shadow: 0 4px 10px rgba(59, 130, 246, 0.4) !important;
-        transform: translateY(-1px) !important;
-    }
-
-    /* Distinct styling for Reset Canvas / Trash button (3rd button) */
-    div[data-testid="stDrawableCanvas"] button:nth-child(3),
-    div[data-testid="stDrawableCanvas"] button[title*="trash"],
-    div[data-testid="stDrawableCanvas"] button[title*="Clear"],
-    div[data-testid="stDrawableCanvas"] button[title*="Reset"] {
-        background: #3B1D28 !important;
-        border: 1.5px solid #991B1B !important;
-    }
-    div[data-testid="stDrawableCanvas"] button:nth-child(3):hover,
-    div[data-testid="stDrawableCanvas"] button[title*="trash"]:hover,
-    div[data-testid="stDrawableCanvas"] button[title*="Clear"]:hover,
-    div[data-testid="stDrawableCanvas"] button[title*="Reset"]:hover {
-        background: #DC2626 !important;
-        border-color: #FCA5A5 !important;
-        box-shadow: 0 4px 10px rgba(220, 38, 38, 0.45) !important;
-        transform: translateY(-1px) !important;
-    }
-
-    /* Hide Save to Streamlit / Download button from canvas toolbar */
-    div[data-testid="stDrawableCanvas"] button:nth-child(4),
-    div[data-testid="stDrawableCanvas"] button:last-child,
-    div[data-testid="stDrawableCanvas"] button[title*="Save"],
-    div[data-testid="stDrawableCanvas"] button[title*="Download"],
-    div[data-testid="stDrawableCanvas"] button[aria-label*="Save"],
-    div[data-testid="stDrawableCanvas"] button[aria-label*="Download"] {
-        display: none !important;
-    }
-
-    div[data-testid="stDrawableCanvas"] svg {
-        fill: #FFFFFF !important;
-        stroke: #FFFFFF !important;
+    div.stButton > button:has(p:contains("Reset Canvas")):hover,
+    div.stButton > button:has(div:contains("Reset Canvas")):hover,
+    div.stButton > button[data-testid="baseButton-secondary"]:hover {
+        background: linear-gradient(135deg, #E11D48 0%, #BE123C 100%) !important;
+        border-color: #FDA4AF !important;
         color: #FFFFFF !important;
-        filter: drop-shadow(0px 1px 2px rgba(0, 0, 0, 0.6)) !important;
-    }
-    div[data-testid="stDrawableCanvas"] svg path {
-        fill: #FFFFFF !important;
-        stroke: #FFFFFF !important;
-        color: #FFFFFF !important;
+        box-shadow: 0 4px 14px rgba(225, 29, 72, 0.5) !important;
+        transform: translateY(-1px) !important;
     }
     </style>
     """,
@@ -804,6 +765,9 @@ def render_mnist_inference_tab():
     with col_canvas:
         st.subheader("Drawing Canvas")
 
+        if "canvas_key_id" not in st.session_state:
+            st.session_state.canvas_key_id = 0
+
         # Canvas controls
         brush_width = st.slider(
             "Brush Width", min_value=8, max_value=36, value=20, step=2,
@@ -818,9 +782,13 @@ def render_mnist_inference_tab():
             height=280,
             width=280,
             drawing_mode="freedraw",
-            display_toolbar=True,
-            key="mnist_digit_canvas",
+            display_toolbar=False,
+            key=f"mnist_digit_canvas_{st.session_state.canvas_key_id}",
         )
+
+        if st.button("🗑️ Reset Canvas", key="reset_canvas_btn", use_container_width=True):
+            st.session_state.canvas_key_id += 1
+            st.rerun()
 
         # Preprocess and show thumbnail
         processed = preprocess_canvas_image(canvas_result)
