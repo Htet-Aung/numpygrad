@@ -22,6 +22,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import streamlit as st
+import streamlit.components.v1 as components
 from PIL import Image
 
 from numpygrad.core.tensor import Tensor, no_grad
@@ -771,6 +772,62 @@ def render_mnist_inference_tab():
             drawing_mode="freedraw",
             display_toolbar=True,
             key="mnist_digit_canvas",
+        )
+
+        components.html(
+            """
+            <script>
+            const applyCanvasStyles = () => {
+                const iframes = window.parent.document.querySelectorAll('iframe');
+                iframes.forEach(iframe => {
+                    try {
+                        const doc = iframe.contentDocument || iframe.contentWindow.document;
+                        if (doc && !doc.getElementById('canvas-toolbar-override')) {
+                            const style = doc.createElement('style');
+                            style.id = 'canvas-toolbar-override';
+                            style.innerHTML = `
+                                /* Hide Download / Save button */
+                                button:first-child,
+                                button[title*="Download"] {
+                                    display: none !important;
+                                }
+
+                                /* Style Undo, Redo, Trash buttons with contrast */
+                                button {
+                                    background-color: #2b2d3a !important;
+                                    border: 1px solid #4a4d60 !important;
+                                    border-radius: 6px !important;
+                                    padding: 4px 8px !important;
+                                    margin-right: 8px !important;
+                                    cursor: pointer !important;
+                                    transition: all 0.2s ease !important;
+                                }
+                                button:hover {
+                                    background-color: #3b3f54 !important;
+                                    border-color: #6c7086 !important;
+                                }
+
+                                /* Force SVG icons to be bright white */
+                                button svg,
+                                button svg path {
+                                    fill: #FFFFFF !important;
+                                    stroke: #FFFFFF !important;
+                                    color: #FFFFFF !important;
+                                }
+                            `;
+                            doc.head.appendChild(style);
+                        }
+                    } catch (e) {
+                        // Catch any cross-origin safety checks
+                    }
+                });
+            };
+            applyCanvasStyles();
+            setInterval(applyCanvasStyles, 250);
+            </script>
+            """,
+            height=0,
+            width=0,
         )
 
         # Preprocess and show thumbnail
