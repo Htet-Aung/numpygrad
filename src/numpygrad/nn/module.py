@@ -163,6 +163,11 @@ class Module:
         from numpygrad.serialization import save_model
         save_model(self, filepath)
 
+    def summary(self, input_shape: Optional[Tuple[int, ...]] = None, verbose: bool = True) -> str:
+        """Generates a structured ASCII summary table of this module."""
+        from numpygrad.nn.summary import summary as model_summary
+        return model_summary(self, input_shape=input_shape, verbose=verbose)
+
     def forward(self, *args: Any, **kwargs: Any) -> Any:
         """Defines the computation performed at every call."""
         raise NotImplementedError("Subclasses of Module must implement forward()")

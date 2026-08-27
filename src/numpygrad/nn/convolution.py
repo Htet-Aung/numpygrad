@@ -200,6 +200,17 @@ class Conv2D(Module):
         x_t = x if isinstance(x, Tensor) else Tensor(x)
         x_data = x_t.data
 
+        if x_data.ndim != 4:
+            raise ValueError(
+                f"Conv2D expected 4D input tensor (batch_size, in_channels={self.in_channels}, height, width), "
+                f"but got shape {x_t.shape} with {x_data.ndim} dimensions."
+            )
+        if x_data.shape[1] != self.in_channels:
+            raise ValueError(
+                f"Conv2D channel dimension mismatch: expected in_channels={self.in_channels} at dimension 1, "
+                f"but got input tensor with shape {x_t.shape} (channel dim is {x_data.shape[1]})."
+            )
+
         B, C, H, W_in = x_data.shape
         kH, kW = self.kernel_size
         sH, sW = self.stride
@@ -208,6 +219,12 @@ class Conv2D(Module):
 
         H_pad = H + 2 * pH
         W_pad = W_in + 2 * pW
+        if H_pad < kH or W_pad < kW:
+            raise ValueError(
+                f"Conv2D spatial dimensions (height={H}, width={W_in}) with padding={self.padding} "
+                f"result in padded shape ({H_pad}, {W_pad}), which is smaller than kernel size {self.kernel_size}."
+            )
+
         out_H = (H_pad - kH) // sH + 1
         out_W = (W_pad - kW) // sW + 1
 

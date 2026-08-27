@@ -35,6 +35,22 @@ class Linear(Module):
 
     def forward(self, x: Union[Tensor, np.ndarray]) -> Tensor:
         x = x if isinstance(x, Tensor) else Tensor(x)
+        if x.ndim > 2:
+            raise ValueError(
+                f"Linear layer expected 2D input (batch_size, in_features={self.in_features}), "
+                f"but got shape {x.shape} with {x.ndim} dimensions. "
+                "Did you forget to add Flatten() before this Linear layer?"
+            )
+        if x.ndim == 2 and x.shape[1] != self.in_features:
+            raise ValueError(
+                f"Linear layer input dimension mismatch: expected in_features={self.in_features}, "
+                f"but got input tensor with shape {x.shape} (feature dim is {x.shape[1]})."
+            )
+        if x.ndim == 1 and x.shape[0] != self.in_features:
+            raise ValueError(
+                f"Linear layer input dimension mismatch: expected in_features={self.in_features}, "
+                f"but got 1D input tensor with shape {x.shape}."
+            )
         out = x @ self.weight
         if self.bias is not None:
             out = out + self.bias

@@ -9,6 +9,8 @@ from numpygrad.core.tensor import (
     enable_grad,
     is_grad_enabled,
     set_grad_enabled,
+    concat,
+    cat,
 )
 from numpygrad.data.dataset import Dataset, TensorDataset
 from numpygrad.data.dataloader import DataLoader
@@ -16,6 +18,7 @@ from numpygrad.serialization import save_model, load_model
 from numpygrad.metrics.classification import accuracy, confusion_matrix
 from numpygrad.nn.layers import Flatten
 from numpygrad.nn.convolution import Conv2D, MaxPool2D
+from numpygrad.nn.summary import summary
 from numpygrad.utils.gradcheck import gradcheck
 import numpygrad.nn as nn
 import numpygrad.optim as optim
@@ -30,6 +33,8 @@ __all__ = [
     "enable_grad",
     "is_grad_enabled",
     "set_grad_enabled",
+    "concat",
+    "cat",
     "Dataset",
     "TensorDataset",
     "DataLoader",
@@ -40,6 +45,7 @@ __all__ = [
     "Flatten",
     "Conv2D",
     "MaxPool2D",
+    "summary",
     "gradcheck",
     "nn",
     "optim",

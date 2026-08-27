@@ -19,6 +19,7 @@ src_dir = os.path.join(repo_root, "src")
 if src_dir not in sys.path:
     sys.path.insert(0, src_dir)
 
+import numpygrad as ng
 from numpygrad.core.tensor import Tensor
 import numpygrad.nn as nn
 
@@ -317,13 +318,70 @@ def verify_maxpool2d(eps: float, rtol: float, atol: float) -> bool:
     )
 
 
+def verify_squeeze(eps: float, rtol: float, atol: float) -> bool:
+    np.random.seed(42)
+    x = Tensor(np.random.randn(2, 1, 3, 1, 4).astype(np.float64), requires_grad=True)
+
+    def f(x_t):
+        return (x_t.squeeze() ** 2.0).sum()
+
+    return run_gradcheck_diagnostic(
+        func=f,
+        inputs=[x],
+        names=["Tensor X (2, 1, 3, 1, 4)"],
+        eps=eps,
+        rtol=rtol,
+        atol=atol,
+        title="Tensor Squeeze (Singleton Removal)",
+    )
+
+
+def verify_unsqueeze(eps: float, rtol: float, atol: float) -> bool:
+    np.random.seed(42)
+    x = Tensor(np.random.randn(3, 4).astype(np.float64), requires_grad=True)
+
+    def f(x_t):
+        return (x_t.unsqueeze(1) ** 2.0).sum()
+
+    return run_gradcheck_diagnostic(
+        func=f,
+        inputs=[x],
+        names=["Tensor X (3, 4)"],
+        eps=eps,
+        rtol=rtol,
+        atol=atol,
+        title="Tensor Unsqueeze (Singleton Insertion)",
+    )
+
+
+def verify_concat(eps: float, rtol: float, atol: float) -> bool:
+    np.random.seed(42)
+    a = Tensor(np.random.randn(3, 4).astype(np.float64), requires_grad=True)
+    b = Tensor(np.random.randn(3, 2).astype(np.float64), requires_grad=True)
+    c = Tensor(np.random.randn(3, 3).astype(np.float64), requires_grad=True)
+
+    def f(a_t, b_t, c_t):
+        out = ng.concat([a_t, b_t, c_t], axis=1)
+        return (out ** 2.0).sum()
+
+    return run_gradcheck_diagnostic(
+        func=f,
+        inputs=[a, b, c],
+        names=["Tensor A (3, 4)", "Tensor B (3, 2)", "Tensor C (3, 3)"],
+        eps=eps,
+        rtol=rtol,
+        atol=atol,
+        title="Tensor Concat (Multi-Tensor Join)",
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description="NumPyGrad Numerical Gradient Verifier")
     parser.add_argument(
         "--layer",
         type=str,
         default="all",
-        choices=["all", "linear", "relu", "cross_entropy", "batchnorm", "slicing", "flatten", "conv2d", "maxpool2d"],
+        choices=["all", "linear", "relu", "cross_entropy", "batchnorm", "slicing", "flatten", "conv2d", "maxpool2d", "squeeze", "unsqueeze", "concat"],
         help="Target operation or layer to verify (default: all)",
     )
     parser.add_argument("--eps", type=float, default=1e-5, help="Finite difference perturbation epsilon")
@@ -341,6 +399,9 @@ def main():
         "flatten": verify_flatten,
         "conv2d": verify_conv2d,
         "maxpool2d": verify_maxpool2d,
+        "squeeze": verify_squeeze,
+        "unsqueeze": verify_unsqueeze,
+        "concat": verify_concat,
     }
 
     if args.layer == "all":

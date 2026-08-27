@@ -27,6 +27,7 @@ from numpygrad.nn.losses import (
     CrossEntropyLoss,
     BCEWithLogitsLoss,
 )
+from numpygrad.nn.summary import summary
 
 __all__ = [
     "Module",
@@ -49,4 +50,5 @@ __all__ = [
     "MSELoss",
     "CrossEntropyLoss",
     "BCEWithLogitsLoss",
+    "summary",
 ]

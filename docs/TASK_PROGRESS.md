@@ -19,8 +19,8 @@ This document tracks development progress across the milestones for evolving **N
 | **Milestone 4** | Flagship MNIST Training (`Flatten`, training pipeline, >=95% accuracy, persistence) | `[DONE]` |
 | **Milestone 5** | Interactive MNIST Inference (Streamlit canvas, digit recognition, model reload) | `[DONE]` |
 | **Milestone 6** | Convolutional Neural Networks (`Conv2D`, `MaxPool2D`, im2col, CNN MNIST) | `[DONE]` |
-| **Milestone 7** | Advanced Loss Functions & Evaluation Metrics (`NLLLoss`, `SmoothL1Loss`, F1 Score) | `[TODO]` |
-| **Milestone 8** | Learning Rate Schedulers (`StepLR`, `CosineAnnealingLR`, `ExponentialLR`) | `[TODO]` |
+| **Milestone 7** | Reliability, Model Summary & Autograd Expansion (`model.summary()`, shape assertions, `concat`, `squeeze`) | `[DONE]` |
+| **Milestone 8** | Advanced Loss Functions, Metrics & Schedulers (`NLLLoss`, `SmoothL1Loss`, `StepLR`, `CosineAnnealingLR`) | `[TODO]` |
 
 ---
 
@@ -92,17 +92,17 @@ This document tracks development progress across the milestones for evolving **N
 
 ---
 
-### Milestone 7: Advanced Loss Functions & Evaluation Metrics
-- [ ] Implement `NLLLoss` (Negative Log Likelihood) `[TODO]`
-- [ ] Implement `SmoothL1Loss` (Huber loss) `[TODO]`
-- [ ] Implement `KLDivLoss` (Kullback-Leibler Divergence) `[TODO]`
-- [ ] Implement classification metrics: `accuracy_score`, `precision_score`, `recall_score`, `f1_score` `[TODO]`
-- [ ] Implement regression metrics: `mean_absolute_error`, `r2_score` `[TODO]`
+### Milestone 7: Reliability, Model Summary & Autograd Expansion
+- [x] Implement `model.summary(input_shape=None)` with ASCII table, parameter counting, and memory estimation `[DONE]`
+- [x] Implement reverse-mode autograd for `.squeeze()`, `.unsqueeze()`, `.transpose()`, `.T`, and `numpygrad.concat()` `[DONE]`
+- [x] Add descriptive dimension error handling in `Linear` and `Conv2D` forward passes `[DONE]`
+- [x] Verify new autograd operations with finite-difference `gradcheck` `[DONE]`
+- [x] Add comprehensive test suites in `tests/test_tensor_ops.py` and `tests/test_summary.py` `[DONE]`
+- [x] Verify 100% pass rate across all test suites `[DONE]`
 
 ---
 
-### Milestone 8: Learning Rate Schedulers
-- [ ] Implement base `_LRScheduler` class `[TODO]`
-- [ ] Implement `StepLR` and `MultiStepLR` decay schedulers `[TODO]`
-- [ ] Implement `ExponentialLR` scheduler `[TODO]`
-- [ ] Implement `CosineAnnealingLR` scheduler `[TODO]`
+### Milestone 8: Advanced Loss Functions, Metrics & Schedulers
+- [ ] Implement `NLLLoss` (Negative Log Likelihood) and `SmoothL1Loss` (Huber loss) `[TODO]`
+- [ ] Implement classification metrics: `precision_score`, `recall_score`, `f1_score` `[TODO]`
+- [ ] Implement learning rate schedulers: `StepLR`, `CosineAnnealingLR`, `ExponentialLR` `[TODO]`

@@ -939,3 +939,144 @@ class Tensor:
         out._backward = _backward
         return out
 
+    def squeeze(self, axis: Optional[Union[int, Sequence[int]]] = None) -> Tensor:
+        """
+        Removes single-dimensional entries from the shape of a tensor.
+        Analytical Gradient: Reshapes incoming gradient back to the original tensor shape.
+        """
+        if axis is not None:
+            if isinstance(axis, int):
+                axis_tuple = (axis,)
+            else:
+                axis_tuple = tuple(axis)
+            s_data = np.squeeze(self.data, axis=axis_tuple).astype(self.dtype)
+        else:
+            s_data = np.squeeze(self.data).astype(self.dtype)
+
+        req_grad = is_grad_enabled() and self.requires_grad
+
+        if not req_grad:
+            return Tensor(
+                s_data,
+                requires_grad=False,
+                _prev=(),
+                _op="squeeze",
+                dtype=self.dtype,
+            )
+
+        out = Tensor(
+            s_data,
+            requires_grad=True,
+            _prev=(self,),
+            _op="squeeze",
+            dtype=self.dtype,
+        )
+
+        def _backward() -> None:
+            if out.grad is None:
+                return
+            if self.requires_grad:
+                gx = out.grad.reshape(self.shape).astype(self.dtype, copy=False)
+                self.grad = gx if self.grad is None else self.grad + gx
+
+        out._backward = _backward
+        return out
+
+    def unsqueeze(self, axis: int) -> Tensor:
+        """
+        Inserts a singleton dimension (size 1) at the specified axis.
+        Analytical Gradient: Reshapes incoming gradient back to the original tensor shape.
+        """
+        u_data = np.expand_dims(self.data, axis=axis).astype(self.dtype)
+        req_grad = is_grad_enabled() and self.requires_grad
+
+        if not req_grad:
+            return Tensor(
+                u_data,
+                requires_grad=False,
+                _prev=(),
+                _op="unsqueeze",
+                dtype=self.dtype,
+            )
+
+        out = Tensor(
+            u_data,
+            requires_grad=True,
+            _prev=(self,),
+            _op="unsqueeze",
+            dtype=self.dtype,
+        )
+
+        def _backward() -> None:
+            if out.grad is None:
+                return
+            if self.requires_grad:
+                gx = out.grad.reshape(self.shape).astype(self.dtype, copy=False)
+                self.grad = gx if self.grad is None else self.grad + gx
+
+        out._backward = _backward
+        return out
+
+
+def concat(tensors: Sequence[Union[Tensor, np.ndarray]], axis: int = 0) -> Tensor:
+    """
+    Concatenates a sequence of tensors along an existing axis.
+
+    Parameters
+    ----------
+    tensors : Sequence[Union[Tensor, np.ndarray]]
+        List or tuple of Tensors with matching shapes except along `axis`.
+    axis : int, default=0
+        The dimension along which the tensors will be joined.
+
+    Returns
+    -------
+    Tensor
+        The concatenated tensor with gradient tracking to all constituent leaf tensors.
+    """
+    if not tensors:
+        raise ValueError("concat: expected a non-empty sequence of tensors")
+
+    tensor_list = [t if isinstance(t, Tensor) else Tensor(t) for t in tensors]
+    arrays = [t.data for t in tensor_list]
+    c_data = np.concatenate(arrays, axis=axis)
+    res_dtype = c_data.dtype
+    req_grad = is_grad_enabled() and any(t.requires_grad for t in tensor_list)
+
+    if not req_grad:
+        return Tensor(
+            c_data,
+            requires_grad=False,
+            _prev=(),
+            _op="concat",
+            dtype=res_dtype,
+        )
+
+    out = Tensor(
+        c_data,
+        requires_grad=True,
+        _prev=tuple(tensor_list),
+        _op="concat",
+        dtype=res_dtype,
+    )
+
+    # Precalculate split sections along axis
+    split_sizes = [t.shape[axis] for t in tensor_list]
+    split_indices = np.cumsum(split_sizes)[:-1]
+
+    def _backward() -> None:
+        if out.grad is None:
+            return
+        grad_splits = np.split(out.grad, split_indices, axis=axis)
+        for t, g in zip(tensor_list, grad_splits):
+            if t.requires_grad:
+                g_cast = g.astype(t.dtype, copy=False)
+                t.grad = g_cast if t.grad is None else t.grad + g_cast
+
+    out._backward = _backward
+    return out
+
+
+cat = concat  # PyTorch parity alias
+
+
