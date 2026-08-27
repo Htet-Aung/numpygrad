@@ -1115,8 +1115,8 @@ def plot_plotly_rover_path(
     )
 
     # 3. Dense Invisible Click-Capture Grid (enables direct click waypoint placement anywhere on canvas)
-    grid_click_x = np.linspace(-2.5, 2.5, 65)
-    grid_click_y = np.linspace(-2.5, 2.5, 65)
+    grid_click_x = np.linspace(-2.45, 2.45, 50)
+    grid_click_y = np.linspace(-2.45, 2.45, 50)
     cg_x, cg_y = np.meshgrid(grid_click_x, grid_click_y)
     fig.add_trace(
         go.Scatter(
@@ -1124,11 +1124,11 @@ def plot_plotly_rover_path(
             y=cg_y.ravel(),
             mode="markers",
             name="Click Capture Grid",
-            marker=dict(size=14, opacity=0, color="rgba(0,0,0,0)"),
-            hoverinfo="skip",
+            marker=dict(size=20, color="rgba(255, 255, 255, 0.01)"),
+            hoverinfo="none",
             showlegend=False,
-            selected=dict(marker=dict(opacity=0)),
-            unselected=dict(marker=dict(opacity=0)),
+            selected=dict(marker=dict(opacity=0.01)),
+            unselected=dict(marker=dict(opacity=0.01)),
         )
     )
 
@@ -1287,7 +1287,7 @@ def plot_plotly_rover_path(
             fixedrange=True,
             range=[-2.5, 2.5],
         ),
-        dragmode=False,
+        clickmode="event+select",
         margin=dict(l=20, r=20, t=40, b=20),
         legend=dict(
             orientation="h",
@@ -2787,6 +2787,45 @@ def render_neural_pathfinding_tab():
         start_x2 = st.slider("Start Position x2", -2.4, 2.4, st.session_state.get("rover_start_x2", 1.20), 0.05, key="rover_start_x2")
         target_x1 = st.slider("Target Goal x1", -2.4, 2.4, st.session_state.get("rover_target_x1", 1.20), 0.05, key="rover_target_x1")
         target_x2 = st.slider("Target Goal x2", -2.4, 2.4, st.session_state.get("rover_target_x2", 0.70), 0.05, key="rover_target_x2")
+
+        with st.expander("Waypoint Micro-Nudge Controls", expanded=False):
+            st.caption("Nudge Start (S) Position (0.10 step):")
+            ns_cols = st.columns(4)
+            if ns_cols[0].button("S Left", key="nudge_s_left"):
+                st.session_state["rover_start_x1"] = max(-2.4, round(st.session_state.get("rover_start_x1", -1.80) - 0.10, 2))
+                st.session_state.pop("rover_sim", None)
+                st.rerun()
+            if ns_cols[1].button("S Right", key="nudge_s_right"):
+                st.session_state["rover_start_x1"] = min(2.4, round(st.session_state.get("rover_start_x1", -1.80) + 0.10, 2))
+                st.session_state.pop("rover_sim", None)
+                st.rerun()
+            if ns_cols[2].button("S Down", key="nudge_s_down"):
+                st.session_state["rover_start_x2"] = max(-2.4, round(st.session_state.get("rover_start_x2", 1.20) - 0.10, 2))
+                st.session_state.pop("rover_sim", None)
+                st.rerun()
+            if ns_cols[3].button("S Up", key="nudge_s_up"):
+                st.session_state["rover_start_x2"] = min(2.4, round(st.session_state.get("rover_start_x2", 1.20) + 0.10, 2))
+                st.session_state.pop("rover_sim", None)
+                st.rerun()
+
+            st.caption("Nudge Target (T) Position (0.10 step):")
+            nt_cols = st.columns(4)
+            if nt_cols[0].button("T Left", key="nudge_t_left"):
+                st.session_state["rover_target_x1"] = max(-2.4, round(st.session_state.get("rover_target_x1", 1.20) - 0.10, 2))
+                st.session_state.pop("rover_sim", None)
+                st.rerun()
+            if nt_cols[1].button("T Right", key="nudge_t_right"):
+                st.session_state["rover_target_x1"] = min(2.4, round(st.session_state.get("rover_target_x1", 1.20) + 0.10, 2))
+                st.session_state.pop("rover_sim", None)
+                st.rerun()
+            if nt_cols[2].button("T Down", key="nudge_t_down"):
+                st.session_state["rover_target_x2"] = max(-2.4, round(st.session_state.get("rover_target_x2", 0.70) - 0.10, 2))
+                st.session_state.pop("rover_sim", None)
+                st.rerun()
+            if nt_cols[3].button("T Up", key="nudge_t_up"):
+                st.session_state["rover_target_x2"] = min(2.4, round(st.session_state.get("rover_target_x2", 0.70) + 0.10, 2))
+                st.session_state.pop("rover_sim", None)
+                st.rerun()
 
         # Live coordinate guidance and obstacle warning
         if active_eval_model is not None:
