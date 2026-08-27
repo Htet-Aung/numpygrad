@@ -206,12 +206,19 @@ st.markdown(
         margin: 0;
     }
 
-    /* Make drawable canvas toolbar icons clearly visible */
+    /* Force visibility of canvas undo/redo/clear icons */
+    div[data-testid="stDrawableCanvas"] ~ div button,
     div[data-testid="stDrawableCanvas"] button,
-    div[data-testid="stDrawableCanvas"] svg {
-        fill: #E0E0E0 !important;
-        color: #E0E0E0 !important;
-        filter: drop-shadow(0px 0px 2px rgba(255, 255, 255, 0.4));
+    div[data-testid="stDrawableCanvas"] svg path {
+        fill: #FFFFFF !important;
+        stroke: #FFFFFF !important;
+        color: #FFFFFF !important;
+    }
+    div[data-testid="stDrawableCanvas"] button {
+        background-color: #262730 !important;
+        border: 1px solid #4A4A5A !important;
+        border-radius: 4px !important;
+        margin: 2px !important;
     }
     </style>
     """,
@@ -439,33 +446,28 @@ def preprocess_canvas_image(canvas_result) -> np.ndarray | None:
     if canvas_result is None or canvas_result.image_data is None:
         return None
 
-    img_data = canvas_result.image_data  # (H, W, 4) RGBA uint8
+    # Extract the stroke channel (white #FFFFFF stroke on black #000000 background)
+    raw_stroke = canvas_result.image_data[:, :, 0].astype(np.float32)
 
-    # Extract the drawing channel (white stroke on black background)
-    gray = np.maximum(img_data[:, :, 0], img_data[:, :, 3]).astype(np.float32)
-
-    # Check if canvas is blank
-    if gray.max() < 10.0 or gray.sum() < 50.0:
+    # Check if canvas contains drawn content (max pixel intensity > 20)
+    if np.max(raw_stroke) <= 20.0:
         return None
 
-    # Binarize with a low threshold to identify drawn strokes
-    mask = gray > 15.0
-    if not np.any(mask):
+    # Find bounding box of pixels > 20
+    y_indices, x_indices = np.where(raw_stroke > 20.0)
+    if len(y_indices) == 0 or len(x_indices) == 0:
         return None
 
-    # Find bounding box of drawn content
-    rows = np.any(mask, axis=1)
-    cols = np.any(mask, axis=0)
-    rmin, rmax = np.where(rows)[0][[0, -1]]
-    cmin, cmax = np.where(cols)[0][[0, -1]]
+    ymin, ymax = int(y_indices.min()), int(y_indices.max())
+    xmin, xmax = int(x_indices.min()), int(x_indices.max())
 
-    # Crop strictly to the non-zero bounding box
-    cropped = gray[rmin:rmax + 1, cmin:cmax + 1]
+    # Crop the digit strictly to the bounding box
+    cropped = raw_stroke[ymin:ymax + 1, xmin:xmax + 1]
     h, w = cropped.shape
     if h <= 0 or w <= 0:
         return None
 
-    # Resize bounding box to fit within a 20x20 box preserving aspect ratio
+    # Resize cropped box to fit inside a 20x20 box preserving aspect ratio
     if h > w:
         new_h = 20
         new_w = max(1, int(round(w * 20.0 / h)))
@@ -473,40 +475,41 @@ def preprocess_canvas_image(canvas_result) -> np.ndarray | None:
         new_w = 20
         new_h = max(1, int(round(h * 20.0 / w)))
 
-    pil_cropped = Image.fromarray(cropped.astype(np.uint8), mode="L")
-    pil_resized = pil_cropped.resize((new_w, new_h), Image.Resampling.BILINEAR)
-    resized = np.array(pil_resized, dtype=np.float32)
+    pil_img = Image.fromarray(cropped.astype(np.uint8), mode="L").resize(
+        (new_w, new_h), Image.Resampling.BILINEAR
+    )
+    resized = np.array(pil_img, dtype=np.float32)
 
-    # Pad into the center of a 28x28 image
-    digit_28 = np.zeros((28, 28), dtype=np.float32)
+    # Place the 20x20 digit into the center of a 28x28 zero-filled (black) array
+    digit_28x28 = np.zeros((28, 28), dtype=np.float32)
     y_offset = (28 - new_h) // 2
     x_offset = (28 - new_w) // 2
-    digit_28[y_offset:y_offset + new_h, x_offset:x_offset + new_w] = resized
+    digit_28x28[y_offset:y_offset + new_h, x_offset:x_offset + new_w] = resized
 
-    # Center-of-mass shift (standard MNIST format)
-    total_mass = digit_28.sum()
+    # Center using center-of-mass (standard MNIST format)
+    total_mass = digit_28x28.sum()
     if total_mass > 0:
         gy, gx = np.mgrid[0:28, 0:28]
-        cy = (gy * digit_28).sum() / total_mass
-        cx = (gx * digit_28).sum() / total_mass
+        cy = (gy * digit_28x28).sum() / total_mass
+        cx = (gx * digit_28x28).sum() / total_mass
         shift_y = int(np.round(14.0 - cy))
         shift_x = int(np.round(14.0 - cx))
         shift_y = int(np.clip(shift_y, -4, 4))
         shift_x = int(np.clip(shift_x, -4, 4))
 
-        shifted = np.zeros_like(digit_28)
+        shifted = np.zeros_like(digit_28x28)
         for r in range(28):
             for c in range(28):
                 nr, nc = r + shift_y, c + shift_x
                 if 0 <= nr < 28 and 0 <= nc < 28:
-                    shifted[nr, nc] = digit_28[r, c]
-        digit_28 = shifted
+                    shifted[nr, nc] = digit_28x28[r, c]
+        digit_28x28 = shifted
 
-    # Normalize pixel values strictly to [0.0, 1.0]
-    digit_28 = np.clip(digit_28 / 255.0, 0.0, 1.0)
+    # Normalize strictly to [0.0, 1.0] (0.0 = black background, 1.0 = white stroke)
+    digit_28x28 = np.clip(digit_28x28 / 255.0, 0.0, 1.0)
 
     # Reshape to (1, 28, 28) batch tensor
-    return digit_28.reshape(1, 28, 28)
+    return digit_28x28.reshape(1, 28, 28)
 
 
 def stable_softmax(logits: np.ndarray) -> np.ndarray:
@@ -748,6 +751,8 @@ def render_mnist_inference_tab():
             display_toolbar=True,
             key="mnist_canvas",
         )
+
+        classify_clicked = st.button("Classify Drawing", type="primary", use_container_width=True)
 
         # Preprocess and show thumbnail
         processed = preprocess_canvas_image(canvas_result)
