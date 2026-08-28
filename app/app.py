@@ -1441,6 +1441,35 @@ def plot_comparison_dashboard_figures(
     return fig_a, fig_b, fig_curves
 
 
+_ROVER_SURFACE_CACHE: Dict[Any, Any] = {}
+
+
+def _get_rover_decision_surface(model: nn.Module, resolution: int = 120) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Caches neural decision surface grid to ensure instantaneous sub-millisecond animation frames."""
+    params = getattr(model, "parameters", lambda: [])()
+    p_sum = sum(float(np.sum(p.data)) for p in params) if params else 0.0
+    cache_key = (id(model), p_sum, resolution)
+    if cache_key in _ROVER_SURFACE_CACHE:
+        return _ROVER_SURFACE_CACHE[cache_key]
+
+    grid_x = np.linspace(-2.5, 2.5, resolution).astype(np.float32)
+    grid_y = np.linspace(-2.5, 2.5, resolution).astype(np.float32)
+    xx, yy = np.meshgrid(grid_x, grid_y)
+    grid_points = np.c_[xx.ravel(), yy.ravel()].astype(np.float32)
+
+    model.eval()
+    with no_grad():
+        grid_logits = model(Tensor(grid_points, requires_grad=False))
+    exp_logits = np.exp(grid_logits.data - np.max(grid_logits.data, axis=-1, keepdims=True))
+    probs = (exp_logits / np.sum(exp_logits, axis=-1, keepdims=True))[:, 1]
+    Z = probs.reshape(xx.shape)
+
+    if len(_ROVER_SURFACE_CACHE) > 16:
+        _ROVER_SURFACE_CACHE.clear()
+    _ROVER_SURFACE_CACHE[cache_key] = (grid_x, grid_y, Z)
+    return grid_x, grid_y, Z
+
+
 def plot_plotly_rover_path(
     model: nn.Module,
     X: np.ndarray,
@@ -1458,39 +1487,22 @@ def plot_plotly_rover_path(
     if not HAS_PLOTLY:
         return None
 
-    # Full-span decision surface
-    grid_x = np.linspace(-2.5, 2.5, 150).astype(np.float32)
-    grid_y = np.linspace(-2.5, 2.5, 150).astype(np.float32)
-    xx, yy = np.meshgrid(grid_x, grid_y)
-    grid_points = np.c_[xx.ravel(), yy.ravel()].astype(np.float32)
-
-    model.eval()
-    with no_grad():
-        grid_logits = model(Tensor(grid_points, requires_grad=False))
-    exp_logits = np.exp(grid_logits.data - np.max(grid_logits.data, axis=-1, keepdims=True))
-    probs = (exp_logits / np.sum(exp_logits, axis=-1, keepdims=True))[:, 1]
-    Z = probs.reshape(xx.shape)
+    # Cached decision surface
+    grid_x, grid_y, Z = _get_rover_decision_surface(model, resolution=120)
 
     fig = go.Figure()
 
-    # 1. Background Obstacle Potential Field (Trace 0)
+    # 1. Background Obstacle Potential Field (GPU/Canvas accelerated Heatmap)
     fig.add_trace(
-        go.Contour(
+        go.Heatmap(
             x=grid_x,
             y=grid_y,
             z=Z,
+            zsmooth="best",
             colorscale="Spectral",
             reversescale=True,
             opacity=0.80,
             showscale=True,
-            contours=dict(
-                start=0.0,
-                end=1.0,
-                size=0.04,
-                coloring="heatmap",
-                showlines=False,
-            ),
-            line=dict(width=0),
             colorbar=dict(
                 title=dict(text="Hazard P(Class 1)", font=dict(size=11, color="white")),
                 tickfont=dict(color="white"),
@@ -1500,7 +1512,7 @@ def plot_plotly_rover_path(
         )
     )
 
-    # 1b. Boundary contour at 0.5 (Trace 1)
+    # 1b. Boundary contour at 0.5 (single boundary line)
     fig.add_trace(
         go.Contour(
             x=grid_x,
@@ -1607,7 +1619,7 @@ def plot_plotly_rover_path(
     num_rays = len(ray_history[0]) if (show_rays and ray_history and len(ray_history) > 0 and len(ray_history[0]) > 0) else 0
 
     if has_sim:
-        active_step = max(0, min(step_index, len(trajectory) - 1)) if step_index is not None else 0
+        active_step = max(0, min(step_index, len(trajectory) - 1)) if step_index is not None else (len(trajectory) - 1)
         init_p = trajectory[active_step]
         init_traj = trajectory[: active_step + 1]
 
@@ -1646,8 +1658,8 @@ def plot_plotly_rover_path(
         )
 
         # Traces 9 .. 9 + num_rays - 1: Radar Rays
-        for r_idx in range(num_rays):
-            if active_step < len(ray_history):
+        if show_rays and ray_history and active_step < len(ray_history):
+            for r_idx in range(num_rays):
                 r = ray_history[active_step][r_idx]
                 r_end = r["endpoint"]
                 h_val = r["hazard"]
@@ -1666,233 +1678,9 @@ def plot_plotly_rover_path(
                         showlegend=False,
                     )
                 )
-            else:
-                fig.add_trace(go.Scatter(x=[], y=[], mode="lines", showlegend=False))
-
-        # Build native animation frames for each step in trajectory
-        frames = []
-        slider_steps = []
-        dyn_indices = list(range(7, 9 + num_rays))
-
-        for k in range(len(trajectory)):
-            sub_traj = trajectory[: k + 1]
-            cur_p = trajectory[k]
-
-            f_path = go.Scatter(
-                x=[p[0] for p in sub_traj],
-                y=[p[1] for p in sub_traj],
-                mode="lines+markers",
-                name="Rover Path",
-                line=dict(color="#FBBF24", width=3.5),
-                marker=dict(color="#F59E0B", size=6, symbol="circle"),
-                hovertext=[f"Step {idx}: ({p[0]:.2f}, {p[1]:.2f})" for idx, p in enumerate(sub_traj)],
-                hoverinfo="text",
-            )
-
-            f_pos = go.Scatter(
-                x=[cur_p[0]],
-                y=[cur_p[1]],
-                mode="markers+text",
-                name="Rover Position",
-                text=[f"Step {k}"],
-                textposition="bottom center",
-                textfont=dict(color="#FBBF24", size=11, family="sans-serif"),
-                marker=dict(symbol="cross", size=14, color="#FBBF24", line=dict(color="#FFFFFF", width=2)),
-                hovertext=[f"Current Rover: ({cur_p[0]:.2f}, {cur_p[1]:.2f}) at Step {k}"],
-                hoverinfo="text",
-            )
-
-            f_rays = []
-            if num_rays > 0 and k < len(ray_history):
-                for r_idx in range(num_rays):
-                    r = ray_history[k][r_idx]
-                    r_end = r["endpoint"]
-                    h_val = r["hazard"]
-                    r_col = get_ray_color(h_val)
-                    f_rays.append(
-                        go.Scatter(
-                            x=[cur_p[0], r_end[0]],
-                            y=[cur_p[1], r_end[1]],
-                            mode="lines+markers",
-                            line=dict(color=r_col, width=2.8, dash="solid"),
-                            marker=dict(size=6, color=r_col, symbol="diamond"),
-                            hovertext=[f"Origin ({cur_p[0]:.2f}, {cur_p[1]:.2f})", f"Ray #{r_idx+1}: Hazard P={h_val*100:.1f}%"],
-                            hoverinfo="text",
-                            showlegend=False,
-                        )
-                    )
-            else:
-                for _ in range(num_rays):
-                    f_rays.append(go.Scatter(x=[], y=[], mode="lines", showlegend=False))
-
-            frames.append(
-                go.Frame(
-                    name=str(k),
-                    data=[f_path, f_pos] + f_rays,
-                    traces=dyn_indices,
-                )
-            )
-
-            slider_steps.append(
-                dict(
-                    method="animate",
-                    label=str(k),
-                    args=[
-                        [str(k)],
-                        dict(
-                            mode="immediate",
-                            frame=dict(duration=0, redraw=False),
-                            transition=dict(duration=0),
-                        ),
-                    ],
-                )
-            )
-
-        fig.frames = frames
-
-        # Multi-Row Animation Controls
-        # Row 1 (y = -0.16): Playback Speed Selector (between chart and play/pause button)
-        # Row 2 (y = -0.28): Combined Play / Pause Toggle Button + Scrubber Slider
-        updatemenus = [
-            # 1. Playback Speed Selector Bar (Row 1)
-            dict(
-                type="buttons",
-                showactive=True,
-                active=1,  # Default: 1.0x Normal
-                direction="left",
-                x=0.0,
-                y=-0.16,
-                xanchor="left",
-                yanchor="top",
-                pad=dict(r=10, t=6, b=6, l=10),
-                bgcolor="#1E293B",
-                bordercolor="#475569",
-                borderwidth=1,
-                font=dict(color="#F8FAFC", size=11, family="sans-serif"),
-                buttons=[
-                    dict(
-                        label="0.5x Slow",
-                        method="animate",
-                        args=[
-                            None,
-                            dict(
-                                frame=dict(duration=120, redraw=False),
-                                fromcurrent=True,
-                                transition=dict(duration=0),
-                                mode="immediate",
-                            ),
-                        ],
-                    ),
-                    dict(
-                        label="1.0x Normal",
-                        method="animate",
-                        args=[
-                            None,
-                            dict(
-                                frame=dict(duration=60, redraw=False),
-                                fromcurrent=True,
-                                transition=dict(duration=0),
-                                mode="immediate",
-                            ),
-                        ],
-                    ),
-                    dict(
-                        label="2.0x Fast",
-                        method="animate",
-                        args=[
-                            None,
-                            dict(
-                                frame=dict(duration=30, redraw=False),
-                                fromcurrent=True,
-                                transition=dict(duration=0),
-                                mode="immediate",
-                            ),
-                        ],
-                    ),
-                    dict(
-                        label="4.0x Turbo",
-                        method="animate",
-                        args=[
-                            None,
-                            dict(
-                                frame=dict(duration=15, redraw=False),
-                                fromcurrent=True,
-                                transition=dict(duration=0),
-                                mode="immediate",
-                            ),
-                        ],
-                    ),
-                ],
-            ),
-            # 2. Combined Play / Pause Toggle Button (Row 2)
-            dict(
-                type="buttons",
-                showactive=True,
-                direction="left",
-                x=0.0,
-                y=-0.28,
-                xanchor="left",
-                yanchor="top",
-                pad=dict(r=10, t=6, b=6, l=10),
-                bgcolor="#1E293B",
-                bordercolor="#475569",
-                borderwidth=1,
-                font=dict(color="#F8FAFC", size=11, family="sans-serif"),
-                buttons=[
-                    dict(
-                        label="Play / Pause",
-                        method="animate",
-                        args=[
-                            None,
-                            dict(
-                                frame=dict(duration=frame_duration, redraw=False),
-                                fromcurrent=True,
-                                transition=dict(duration=0),
-                                mode="immediate",
-                            ),
-                        ],
-                        args2=[
-                            [None],
-                            dict(
-                                frame=dict(duration=0, redraw=False),
-                                mode="immediate",
-                                transition=dict(duration=0),
-                            ),
-                        ],
-                    ),
-                ],
-            ),
-        ]
-
-        sliders = [
-            dict(
-                active=active_step,
-                steps=slider_steps,
-                x=0.22,
-                y=-0.28,
-                len=0.76,
-                xanchor="left",
-                yanchor="top",
-                pad=dict(t=6, b=6),
-                currentvalue=dict(
-                    font=dict(size=12, color="#38BDF8"),
-                    prefix="Step: ",
-                    visible=True,
-                    xanchor="right",
-                ),
-                font=dict(color="#94A3B8", size=10),
-                bgcolor="#0F172A",
-                bordercolor="#334155",
-                tickcolor="#475569",
-                ticklen=4,
-            )
-        ]
-    else:
-        updatemenus = []
-        sliders = []
 
     fig.update_layout(
-        uirevision="rover_sim_viewport",
+        uirevision="rover_viewport",
         title=dict(
             text=title,
             font=dict(size=13.5, color="#F8FAFC"),
@@ -1919,7 +1707,7 @@ def plot_plotly_rover_path(
             range=[-2.5, 2.5],
         ),
         clickmode="event+select",
-        margin=dict(l=45, r=45, t=115, b=130 if has_sim else 45),
+        margin=dict(l=45, r=45, t=110, b=45),
         legend=dict(
             orientation="h",
             yanchor="bottom",
@@ -1931,11 +1719,9 @@ def plot_plotly_rover_path(
             bordercolor="#334155",
             borderwidth=1,
         ),
-        updatemenus=updatemenus,
-        sliders=sliders,
         paper_bgcolor="#0F172A",
         plot_bgcolor="#0F172A",
-        height=670 if has_sim else 560,
+        height=540,
     )
     return fig
 
@@ -3546,22 +3332,18 @@ def render_neural_pathfinding_tab():
 
     active_eval_model = model if nav_mode == "Single Model Mission" else saved_comp["model_a"]
 
-    # Initialize coordinates dynamically if not present
-    if "rover_start_x1" not in st.session_state and active_eval_model is not None:
-        try:
-            auto_s, auto_t = find_safe_waypoints(active_eval_model)
-            st.session_state["rover_start_x1"] = auto_s[0]
-            st.session_state["rover_start_x2"] = auto_s[1]
-            st.session_state["rover_target_x1"] = auto_t[0]
-            st.session_state["rover_target_x2"] = auto_t[1]
-        except Exception:
-            st.session_state["rover_start_x1"] = -1.80
-            st.session_state["rover_start_x2"] = 1.20
-            st.session_state["rover_target_x1"] = 1.20
-            st.session_state["rover_target_x2"] = 0.70
+    # Initialize coordinates, playback, and step states in st.session_state once if not present
+    st.session_state.setdefault("rover_start_x1", -1.80)
+    st.session_state.setdefault("rover_start_x2", 1.20)
+    st.session_state.setdefault("rover_target_x1", 1.20)
+    st.session_state.setdefault("rover_target_x2", 0.70)
+    st.session_state.setdefault("rover_step_idx", 0)
+    st.session_state.setdefault("rover_race_step_idx", 0)
+    st.session_state.setdefault("rover_anim_playing", False)
+    st.session_state.setdefault("rover_race_anim_playing", False)
 
     # Process incoming map click events BEFORE sidebar widgets instantiate
-    for map_k in ["rover_animated_map", "rover_plotly_map", "rover_plotly_map_standby", "plotly_rover_a", "plotly_rover_b", "plotly_rover_a_standby", "plotly_rover_b_standby"]:
+    for map_k in ["rover_single_map", "rover_plotly_map_standby", "rover_race_model_a", "rover_race_model_b", "plotly_rover_a_standby", "plotly_rover_b_standby"]:
         event_dict = st.session_state.get(map_k)
         if isinstance(event_dict, dict):
             pts = event_dict.get("selection", {}).get("points", [])
@@ -3578,6 +3360,12 @@ def render_neural_pathfinding_tab():
                     else:
                         st.session_state["rover_target_x1"] = cx
                         st.session_state["rover_target_x2"] = cy
+                    st.session_state["rover_anim_playing"] = False
+                    st.session_state["rover_race_anim_playing"] = False
+                    st.session_state.pop("rover_step_idx", None)
+                    st.session_state.pop("rover_step_slider", None)
+                    st.session_state.pop("rover_race_step_idx", None)
+                    st.session_state.pop("rover_race_step_slider", None)
                     st.session_state.pop("rover_sim", None)
                     st.session_state.pop("rover_sim_a", None)
                     st.session_state.pop("rover_sim_b", None)
@@ -3627,6 +3415,12 @@ def render_neural_pathfinding_tab():
             elif dtx2 != 0.0:
                 st.session_state["rover_target_x2"] = max(-2.4, min(2.4, round(st.session_state.get("rover_target_x2", 0.70) + dtx2, 2)))
 
+        st.session_state["rover_anim_playing"] = False
+        st.session_state["rover_race_anim_playing"] = False
+        st.session_state.pop("rover_step_idx", None)
+        st.session_state.pop("rover_step_slider", None)
+        st.session_state.pop("rover_race_step_idx", None)
+        st.session_state.pop("rover_race_step_slider", None)
         st.session_state.pop("rover_sim", None)
         st.session_state.pop("rover_sim_a", None)
         st.session_state.pop("rover_sim_b", None)
@@ -3695,10 +3489,10 @@ def render_neural_pathfinding_tab():
                 kwargs={"sx1": -1.80, "sx2": -1.80, "tx1": 1.80, "tx2": 1.80},
             )
 
-        start_x1 = st.slider("Start Position x1", -2.4, 2.4, st.session_state.get("rover_start_x1", -1.80), 0.05, key="rover_start_x1")
-        start_x2 = st.slider("Start Position x2", -2.4, 2.4, st.session_state.get("rover_start_x2", 1.20), 0.05, key="rover_start_x2")
-        target_x1 = st.slider("Target Goal x1", -2.4, 2.4, st.session_state.get("rover_target_x1", 1.20), 0.05, key="rover_target_x1")
-        target_x2 = st.slider("Target Goal x2", -2.4, 2.4, st.session_state.get("rover_target_x2", 0.70), 0.05, key="rover_target_x2")
+        start_x1 = st.slider("Start Position x1", min_value=-2.4, max_value=2.4, step=0.05, key="rover_start_x1")
+        start_x2 = st.slider("Start Position x2", min_value=-2.4, max_value=2.4, step=0.05, key="rover_start_x2")
+        target_x1 = st.slider("Target Goal x1", min_value=-2.4, max_value=2.4, step=0.05, key="rover_target_x1")
+        target_x2 = st.slider("Target Goal x2", min_value=-2.4, max_value=2.4, step=0.05, key="rover_target_x2")
 
         with st.expander("Waypoint Micro-Nudge Controls", expanded=False):
             st.caption("Nudge Start (S) Position (0.10 step):")
@@ -3843,6 +3637,8 @@ def render_neural_pathfinding_tab():
             st.session_state["rover_sim"] = sim_result
             st.session_state["sim_active_start"] = start_pos
             st.session_state["sim_active_target"] = target_pos
+            st.session_state["rover_step_idx"] = len(sim_result["trajectory"]) - 1
+            st.session_state["rover_step_slider"] = st.session_state["rover_step_idx"]
         else:
             sim_result = st.session_state.get("rover_sim", None)
 
@@ -3904,34 +3700,90 @@ def render_neural_pathfinding_tab():
                 else:
                     st.caption("Tip: Click anywhere on the contour map to instantly relocate the selected waypoint.")
 
-            col_chart, col_details = st.columns([3, 2])
-            with col_chart:
-                if HAS_PLOTLY:
-                    fig_rover = plot_plotly_rover_path(
-                        model=model,
-                        X=X,
-                        y=y,
-                        trajectory=trajectory,
-                        ray_history=ray_history,
-                        start_pos=start_pos,
-                        target_pos=target_pos,
-                        show_rays=show_sensor_rays,
-                        title=f"Rover Mission on {dataset_name} ({arch_str}) - {steps_taken} Steps",
-                    )
-                    st.plotly_chart(
-                        fig_rover,
-                        on_select="rerun",
-                        selection_mode=["points"],
-                        key="rover_animated_map",
-                        config={"displayModeBar": False, "scrollZoom": False},
-                        width="stretch",
-                    )
-                else:
-                    fig_rover_mpl = plot_rover_path_mpl(model, X, y, trajectory, start_pos, target_pos)
-                    st.pyplot(fig_rover_mpl)
-                    plt.close(fig_rover_mpl)
+            total_steps = len(trajectory) - 1
 
-            with col_details:
+            # -- State initialization --
+            if "rover_step_idx" not in st.session_state:
+                st.session_state["rover_step_idx"] = total_steps
+            elif st.session_state["rover_step_idx"] > total_steps:
+                st.session_state["rover_step_idx"] = total_steps
+
+            # Sync slider key from step_idx BEFORE widget creation (no value= needed)
+            st.session_state["rover_step_slider"] = min(
+                total_steps, st.session_state.get("rover_step_idx", total_steps)
+            )
+
+            # -- Transport callbacks (execute BEFORE widgets on rerun) --
+            def _set_single_step(s_target):
+                st.session_state["rover_step_idx"] = max(0, min(total_steps, int(s_target)))
+                st.session_state["rover_anim_playing"] = False
+
+            def _toggle_play():
+                if st.session_state.get("rover_anim_playing", False):
+                    st.session_state["rover_anim_playing"] = False
+                else:
+                    if st.session_state.get("rover_step_idx", 0) >= total_steps:
+                        st.session_state["rover_step_idx"] = 0
+                    st.session_state["rover_anim_playing"] = True
+
+            # -- Full Transport Bar --
+            c_start, c_back, c_play, c_fwd, c_end, c_speed = st.columns(
+                [1, 1, 1.5, 1, 1, 2.2], vertical_alignment="center"
+            )
+            with c_start:
+                st.button("⏮ Start", width="stretch", key="btn_anim_start",
+                          on_click=_set_single_step, args=(0,))
+            with c_back:
+                cur_v = st.session_state.get("rover_step_idx", total_steps)
+                st.button("◀ -5", width="stretch", key="btn_anim_back",
+                          on_click=_set_single_step, args=(max(0, cur_v - 5),))
+            with c_play:
+                is_playing = st.session_state.get("rover_anim_playing", False)
+                play_label = "⏸ Pause" if is_playing else "▶ Play"
+                st.button(play_label, width="stretch", key="btn_anim_play_toggle",
+                          type="primary" if not is_playing else "secondary",
+                          on_click=_toggle_play)
+            with c_fwd:
+                cur_v = st.session_state.get("rover_step_idx", total_steps)
+                st.button("+5 ▶", width="stretch", key="btn_anim_fwd",
+                          on_click=_set_single_step, args=(min(total_steps, cur_v + 5),))
+            with c_end:
+                st.button("⏭ End", width="stretch", key="btn_anim_end",
+                          on_click=_set_single_step, args=(total_steps,))
+            with c_speed:
+                speed_sel = st.segmented_control(
+                    "Speed",
+                    options=["0.5x", "1.0x", "2.0x", "4.0x"],
+                    default="1.0x",
+                    label_visibility="collapsed",
+                    key="rover_anim_speed_seg",
+                ) if hasattr(st, "segmented_control") else st.radio(
+                    "Speed",
+                    options=["0.5x", "1.0x", "2.0x", "4.0x"],
+                    index=1,
+                    horizontal=True,
+                    label_visibility="collapsed",
+                    key="rover_anim_speed_radio",
+                )
+                if speed_sel is None:
+                    speed_sel = "1.0x"
+
+            # -- Scrubber slider (no value= param; key synced from step_idx above) --
+            def _on_scrubber_change():
+                st.session_state["rover_step_idx"] = st.session_state["rover_step_slider"]
+                st.session_state["rover_anim_playing"] = False
+
+            active_step = st.slider(
+                "Trajectory Step Scrubber",
+                min_value=0,
+                max_value=total_steps,
+                key="rover_step_slider",
+                on_change=_on_scrubber_change,
+                help="Drag slider or use transport buttons to inspect rover sensory states step-by-step.",
+            )
+
+            # -- Diagnostics renderer (reused by both fragment and static paths) --
+            def _render_single_diagnostics(step_i):
                 st.subheader("Rover Mission Diagnostics")
                 st.markdown(
                     f"""
@@ -3939,13 +3791,12 @@ def render_neural_pathfinding_tab():
                         <div style="font-size: 0.8rem; text-transform: uppercase; color: #94A3B8; letter-spacing: 0.5px;">Active Potential Field Model</div>
                         <div style="font-size: 1.15rem; font-weight: 700; color: #38BDF8; margin: 0.2rem 0;">{arch_str} on {dataset_name}</div>
                         <div style="font-size: 0.85rem; color: #CBD5E1;">
-                            Start: <code>({start_pos[0]:.2f}, {start_pos[1]:.2f})</code> &rarr; Target: <code>({target_pos[0]:.2f}, {target_pos[1]:.2f})</code>
+                            Step: <code>{step_i} / {total_steps}</code> | Pos: <code>({trajectory[step_i][0]:.2f}, {trajectory[step_i][1]:.2f})</code>
                         </div>
                     </div>
                     """,
                     unsafe_allow_html=True,
                 )
-
                 st.markdown("<div style='margin-top: 1rem;'></div>", unsafe_allow_html=True)
                 st.markdown("#### Sensory Radar Sweep Details")
                 st.markdown(
@@ -3956,6 +3807,80 @@ def render_neural_pathfinding_tab():
                     """,
                     unsafe_allow_html=True,
                 )
+
+            # -- Chart rendering --
+            anim_delay = {"0.5x": 0.10, "1.0x": 0.05, "2.0x": 0.025, "4.0x": 0.01}.get(speed_sel, 0.05)
+            is_anim_active = st.session_state.get("rover_anim_playing", False)
+
+            if is_anim_active:
+                # Smooth playback: fragment auto-reruns only the chart area
+                @st.fragment(run_every=anim_delay)
+                def _rover_anim_fragment():
+                    step = st.session_state.get("rover_step_idx", 0)
+                    if st.session_state.get("rover_anim_playing", False):
+                        if step < total_steps:
+                            step += 1
+                            st.session_state["rover_step_idx"] = step
+                        else:
+                            st.session_state["rover_anim_playing"] = False
+                            st.rerun(scope="app")
+                            return
+
+                    col_chart, col_details = st.columns([3, 2])
+                    with col_chart:
+                        if HAS_PLOTLY:
+                            fig_frame = plot_plotly_rover_path(
+                                model=model, X=X, y=y,
+                                trajectory=trajectory,
+                                ray_history=ray_history,
+                                start_pos=start_pos,
+                                target_pos=target_pos,
+                                show_rays=show_sensor_rays,
+                                step_index=step,
+                                title=f"Rover Mission on {dataset_name} ({arch_str}) - Step {step}/{total_steps}",
+                            )
+                            st.plotly_chart(
+                                fig_frame,
+                                config={"displayModeBar": False, "scrollZoom": False},
+                                width="stretch",
+                            )
+                        else:
+                            fig_mpl = plot_rover_path_mpl(model, X, y, trajectory[:step+1], start_pos, target_pos)
+                            st.pyplot(fig_mpl)
+                            plt.close(fig_mpl)
+                    with col_details:
+                        _render_single_diagnostics(step)
+
+                _rover_anim_fragment()
+            else:
+                # Static render with click-to-waypoint enabled
+                col_chart, col_details = st.columns([3, 2])
+                with col_chart:
+                    if HAS_PLOTLY:
+                        fig_rover = plot_plotly_rover_path(
+                            model=model, X=X, y=y,
+                            trajectory=trajectory,
+                            ray_history=ray_history,
+                            start_pos=start_pos,
+                            target_pos=target_pos,
+                            show_rays=show_sensor_rays,
+                            step_index=active_step,
+                            title=f"Rover Mission on {dataset_name} ({arch_str}) - Step {active_step}/{total_steps}",
+                        )
+                        st.plotly_chart(
+                            fig_rover,
+                            on_select="rerun",
+                            selection_mode=["points"],
+                            key="rover_single_map",
+                            config={"displayModeBar": False, "scrollZoom": False},
+                            width="stretch",
+                        )
+                    else:
+                        fig_rover_mpl = plot_rover_path_mpl(model, X, y, trajectory[:active_step+1], start_pos, target_pos)
+                        st.pyplot(fig_rover_mpl)
+                        plt.close(fig_rover_mpl)
+                with col_details:
+                    _render_single_diagnostics(active_step)
 
                 st.caption("How Neural Potential Field Navigation Works:")
                 st.markdown(
@@ -4093,6 +4018,8 @@ def render_neural_pathfinding_tab():
             st.session_state["rover_sim_b"] = sim_b
             st.session_state["sim_active_start"] = start_pos
             st.session_state["sim_active_target"] = target_pos
+            st.session_state["rover_race_step_idx"] = max(len(sim_a["trajectory"]), len(sim_b["trajectory"])) - 1
+            st.session_state["rover_race_step_slider"] = st.session_state["rover_race_step_idx"]
         else:
             sim_a = st.session_state.get("rover_sim_a", None)
             sim_b = st.session_state.get("rover_sim_b", None)
@@ -4110,60 +4037,173 @@ def render_neural_pathfinding_tab():
             max_haz_b = max(sim_b["hazard_history"]) if sim_b["hazard_history"] else 0.0
             inferences_b = sim_b["steps_taken"] * num_rays + sim_b["steps_taken"]
 
-            st.caption("Autonomous race comparing decision boundary geodesic flow navigation.")
+            total_race_steps = max(len(traj_a), len(traj_b)) - 1
 
-            col_a, col_b = st.columns(2)
-            with col_a:
-                st.subheader(f"Model A: {arch_a}")
-                st.caption(f"Parameters: {params_a:,} | Outcome: {'Goal Reached' if sim_a['success'] else 'Failed'} | Collisions: {sim_a['collisions']}")
-                if HAS_PLOTLY:
-                    fig_a = plot_plotly_rover_path(
-                        model=model_a,
-                        X=X,
-                        y=y,
-                        trajectory=traj_a,
-                        ray_history=sim_a["ray_history"],
-                        start_pos=start_pos,
-                        target_pos=target_pos,
-                        show_rays=show_sensor_rays,
-                        title=f"Model A ({arch_a}) Potential Field",
-                    )
-                    st.plotly_chart(
-                        fig_a,
-                        key="plotly_rover_a",
-                        config={"displayModeBar": False, "scrollZoom": False},
-                        width="stretch",
-                    )
-                else:
-                    fig_a_mpl = plot_rover_path_mpl(model_a, X, y, traj_a, start_pos, target_pos)
-                    st.pyplot(fig_a_mpl)
-                    plt.close(fig_a_mpl)
+            if "rover_race_step_idx" not in st.session_state:
+                st.session_state["rover_race_step_idx"] = total_race_steps
+            elif st.session_state["rover_race_step_idx"] > total_race_steps:
+                st.session_state["rover_race_step_idx"] = total_race_steps
 
-            with col_b:
-                st.subheader(f"Model B: {arch_b}")
-                st.caption(f"Parameters: {params_b:,} | Outcome: {'Goal Reached' if sim_b['success'] else 'Failed'} | Collisions: {sim_b['collisions']}")
-                if HAS_PLOTLY:
-                    fig_b = plot_plotly_rover_path(
-                        model=model_b,
-                        X=X,
-                        y=y,
-                        trajectory=traj_b,
-                        ray_history=sim_b["ray_history"],
-                        start_pos=start_pos,
-                        target_pos=target_pos,
-                        show_rays=show_sensor_rays,
-                        title=f"Model B ({arch_b}) Potential Field",
-                    )
-                    st.plotly_chart(
-                        fig_b,
-                        key="plotly_rover_b",
-                        config={"displayModeBar": False, "scrollZoom": False},
-                        width="stretch",
-                    )
+            # Sync slider key from step_idx BEFORE widget creation (no value= needed)
+            st.session_state["rover_race_step_slider"] = min(
+                total_race_steps, st.session_state.get("rover_race_step_idx", total_race_steps)
+            )
+
+            # -- Race transport callbacks --
+            def _set_race_step(r_target):
+                st.session_state["rover_race_step_idx"] = max(0, min(total_race_steps, int(r_target)))
+                st.session_state["rover_race_anim_playing"] = False
+
+            def _toggle_race_play():
+                if st.session_state.get("rover_race_anim_playing", False):
+                    st.session_state["rover_race_anim_playing"] = False
                 else:
-                    fig_b_mpl = plot_rover_path_mpl(model_b, X, y, traj_b, start_pos, target_pos)
-                    st.pyplot(fig_b_mpl)
-                    plt.close(fig_b_mpl)
+                    if st.session_state.get("rover_race_step_idx", 0) >= total_race_steps:
+                        st.session_state["rover_race_step_idx"] = 0
+                    st.session_state["rover_race_anim_playing"] = True
+
+            # -- Full Transport Bar (Race) --
+            c_start_r, c_back_r, c_play_r, c_fwd_r, c_end_r, c_speed_r = st.columns(
+                [1, 1, 1.5, 1, 1, 2.2], vertical_alignment="center"
+            )
+            with c_start_r:
+                st.button("⏮ Start", width="stretch", key="btn_race_anim_start",
+                          on_click=_set_race_step, args=(0,))
+            with c_back_r:
+                cur_vr = st.session_state.get("rover_race_step_idx", total_race_steps)
+                st.button("◀ -5", width="stretch", key="btn_race_anim_back",
+                          on_click=_set_race_step, args=(max(0, cur_vr - 5),))
+            with c_play_r:
+                is_playing_r = st.session_state.get("rover_race_anim_playing", False)
+                play_label_r = "⏸ Pause" if is_playing_r else "▶ Play"
+                st.button(play_label_r, width="stretch", key="btn_race_anim_play_toggle",
+                          type="primary" if not is_playing_r else "secondary",
+                          on_click=_toggle_race_play)
+            with c_fwd_r:
+                cur_vr = st.session_state.get("rover_race_step_idx", total_race_steps)
+                st.button("+5 ▶", width="stretch", key="btn_race_anim_fwd",
+                          on_click=_set_race_step, args=(min(total_race_steps, cur_vr + 5),))
+            with c_end_r:
+                st.button("⏭ End", width="stretch", key="btn_race_anim_end",
+                          on_click=_set_race_step, args=(total_race_steps,))
+            with c_speed_r:
+                speed_sel_r = st.segmented_control(
+                    "Speed",
+                    options=["0.5x", "1.0x", "2.0x", "4.0x"],
+                    default="1.0x",
+                    label_visibility="collapsed",
+                    key="rover_race_anim_speed_seg",
+                ) if hasattr(st, "segmented_control") else st.radio(
+                    "Speed",
+                    options=["0.5x", "1.0x", "2.0x", "4.0x"],
+                    index=1,
+                    horizontal=True,
+                    label_visibility="collapsed",
+                    key="rover_race_anim_speed_radio",
+                )
+                if speed_sel_r is None:
+                    speed_sel_r = "1.0x"
+
+            # -- Race scrubber (no value= param; key synced above) --
+            def _on_race_scrubber_change():
+                st.session_state["rover_race_step_idx"] = st.session_state["rover_race_step_slider"]
+                st.session_state["rover_race_anim_playing"] = False
+
+            active_race_step = st.slider(
+                "Trajectory Step Scrubber (Dual Race)",
+                min_value=0,
+                max_value=total_race_steps,
+                key="rover_race_step_slider",
+                on_change=_on_race_scrubber_change,
+                help="Scrub through the synchronized dual navigation race step-by-step.",
+            )
+
+            # -- Helper to render one dual-race frame --
+            def _render_race_frame(step_r, allow_click=False):
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    st.subheader(f"Model A: {arch_a}")
+                    st.caption(f"Parameters: {params_a:,} | Outcome: {'Goal Reached' if sim_a['success'] else 'Failed'} | Collisions: {sim_a['collisions']}")
+                    if HAS_PLOTLY:
+                        fig_a = plot_plotly_rover_path(
+                            model=model_a,
+                            X=X,
+                            y=y,
+                            trajectory=traj_a,
+                            ray_history=sim_a["ray_history"],
+                            start_pos=start_pos,
+                            target_pos=target_pos,
+                            show_rays=show_sensor_rays,
+                            step_index=min(step_r, len(traj_a) - 1),
+                            title=f"Model A ({arch_a}) - Step {min(step_r, len(traj_a)-1)}/{len(traj_a)-1}",
+                        )
+                        if allow_click:
+                            st.plotly_chart(
+                                fig_a,
+                                on_select="rerun",
+                                selection_mode=["points"],
+                                key="rover_race_model_a",
+                                config={"displayModeBar": False, "scrollZoom": False},
+                                width="stretch",
+                            )
+                        else:
+                            st.plotly_chart(fig_a, config={"displayModeBar": False, "scrollZoom": False}, width="stretch")
+                    else:
+                        fig_a_mpl = plot_rover_path_mpl(model_a, X, y, traj_a[:min(step_r, len(traj_a)-1)+1], start_pos, target_pos)
+                        st.pyplot(fig_a_mpl)
+                        plt.close(fig_a_mpl)
+                with col_b:
+                    st.subheader(f"Model B: {arch_b}")
+                    st.caption(f"Parameters: {params_b:,} | Outcome: {'Goal Reached' if sim_b['success'] else 'Failed'} | Collisions: {sim_b['collisions']}")
+                    if HAS_PLOTLY:
+                        fig_b = plot_plotly_rover_path(
+                            model=model_b,
+                            X=X,
+                            y=y,
+                            trajectory=traj_b,
+                            ray_history=sim_b["ray_history"],
+                            start_pos=start_pos,
+                            target_pos=target_pos,
+                            show_rays=show_sensor_rays,
+                            step_index=min(step_r, len(traj_b) - 1),
+                            title=f"Model B ({arch_b}) - Step {min(step_r, len(traj_b)-1)}/{len(traj_b)-1}",
+                        )
+                        if allow_click:
+                            st.plotly_chart(
+                                fig_b,
+                                on_select="rerun",
+                                selection_mode=["points"],
+                                key="rover_race_model_b",
+                                config={"displayModeBar": False, "scrollZoom": False},
+                                width="stretch",
+                            )
+                        else:
+                            st.plotly_chart(fig_b, config={"displayModeBar": False, "scrollZoom": False}, width="stretch")
+                    else:
+                        fig_b_mpl = plot_rover_path_mpl(model_b, X, y, traj_b[:min(step_r, len(traj_b)-1)+1], start_pos, target_pos)
+                        st.pyplot(fig_b_mpl)
+                        plt.close(fig_b_mpl)
+
+            anim_delay_r = {"0.5x": 0.10, "1.0x": 0.05, "2.0x": 0.025, "4.0x": 0.01}.get(speed_sel_r, 0.05)
+            is_race_anim_active = st.session_state.get("rover_race_anim_playing", False)
+
+            if is_race_anim_active:
+                @st.fragment(run_every=anim_delay_r)
+                def _rover_race_anim_fragment():
+                    step_r = st.session_state.get("rover_race_step_idx", 0)
+                    if st.session_state.get("rover_race_anim_playing", False):
+                        if step_r < total_race_steps:
+                            step_r += 1
+                            st.session_state["rover_race_step_idx"] = step_r
+                        else:
+                            st.session_state["rover_race_anim_playing"] = False
+                            st.rerun(scope="app")
+                            return
+                    _render_race_frame(step_r, allow_click=False)
+
+                _rover_race_anim_fragment()
+            else:
+                _render_race_frame(active_race_step, allow_click=True)
 
             # Comparative Race Telemetry Summary
             st.markdown("<div style='margin-top: 1.25rem;'></div>", unsafe_allow_html=True)
