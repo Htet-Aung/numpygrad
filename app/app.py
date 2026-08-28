@@ -17,6 +17,12 @@ from typing import Tuple, List, Dict, Any, Optional, Union
 # Ensure src/ is on the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
+# Eager top-level imports to prevent thread-level lazy import race conditions in Plotly validators
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
+
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
