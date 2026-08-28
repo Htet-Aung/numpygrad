@@ -222,18 +222,28 @@ st.markdown(
         margin: 0;
     }
 
-    /* Primary action buttons (Start Training, etc.) */
+    /* Standardize all action buttons for pixel-perfect vertical alignment */
+    div.stButton > button {
+        border-radius: 8px !important;
+        padding: 0.55rem 1.15rem !important;
+        font-size: 0.95rem !important;
+        font-weight: 600 !important;
+        margin: 0 !important;
+        min-height: 42px !important;
+        height: 42px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        transition: all 0.2s ease-in-out !important;
+    }
+
+    /* Primary action buttons */
     div.stButton > button[kind="primary"] {
         background: linear-gradient(135deg, #6366F1 0%, #4F46E5 100%) !important;
         color: #FFFFFF !important;
         font-weight: 700 !important;
-        font-size: 1.05rem !important;
         border: 1.5px solid #818CF8 !important;
-        border-radius: 8px !important;
-        padding: 0.6rem 1.25rem !important;
         box-shadow: 0 4px 14px rgba(79, 70, 229, 0.4) !important;
-        transition: all 0.2s ease-in-out !important;
-        margin-top: 6px !important;
     }
     div.stButton > button[kind="primary"]:hover {
         background: linear-gradient(135deg, #7C3AED 0%, #6366F1 100%) !important;
@@ -241,6 +251,19 @@ st.markdown(
         box-shadow: 0 6px 20px rgba(124, 58, 237, 0.55) !important;
         transform: translateY(-1px) !important;
         color: #FFFFFF !important;
+    }
+
+    /* Secondary action buttons */
+    div.stButton > button[kind="secondary"] {
+        background: #1E293B !important;
+        color: #F8FAFC !important;
+        border: 1.5px solid #334155 !important;
+    }
+    div.stButton > button[kind="secondary"]:hover {
+        background: #334155 !important;
+        border-color: #64748B !important;
+        color: #FFFFFF !important;
+        transform: translateY(-1px) !important;
     }
 
     /* Center the drawable canvas container relative to column and buttons */
@@ -3543,7 +3566,7 @@ def render_neural_pathfinding_tab():
         st.session_state.pop("rover_sim_b", None)
 
     # ---------------- Mission Action Bar ----------------
-    col_btn1, col_btn2, col_speed = st.columns([1, 1, 2])
+    col_btn1, col_btn2, col_speed = st.columns([1, 1, 2], vertical_alignment="bottom")
     with col_btn1:
         launch_main = st.button(
             "Launch Full Mission" if nav_mode == "Single Model Mission" else "Start Dual-Model Race",
