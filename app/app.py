@@ -905,7 +905,15 @@ def plot_plotly_custom_canvas(
             )
 
     fig.update_layout(
-        title=dict(text=title, font=dict(size=14, color="#F8FAFC")),
+        title=dict(
+            text=title,
+            font=dict(size=13, color="#F8FAFC"),
+            y=0.98,
+            x=0.02,
+            xanchor="left",
+            yanchor="top",
+            pad=dict(b=10),
+        ),
         xaxis=dict(
             title=dict(text="Feature x1", font=dict(color="#CBD5E1")),
             tickfont=dict(color="#CBD5E1"),
@@ -925,7 +933,7 @@ def plot_plotly_custom_canvas(
             range=[-2.5, 2.5],
         ),
         clickmode="event+select",
-        margin=dict(l=20, r=20, t=40, b=20),
+        margin=dict(l=35, r=35, t=85, b=35),
         legend=dict(
             orientation="h",
             yanchor="bottom",
@@ -933,11 +941,13 @@ def plot_plotly_custom_canvas(
             xanchor="right",
             x=1,
             font=dict(size=10, color="#CBD5E1"),
-            bgcolor="rgba(15, 23, 42, 0.7)",
+            bgcolor="rgba(15, 23, 42, 0.75)",
+            bordercolor="#334155",
+            borderwidth=1,
         ),
         paper_bgcolor="#0F172A",
         plot_bgcolor="#0F172A",
-        height=480,
+        height=500,
     )
     return fig
 
@@ -1077,7 +1087,15 @@ def plot_plotly_decision_boundary(
         )
 
     fig.update_layout(
-        title=dict(text=title, font=dict(size=14, color="#F8FAFC")),
+        title=dict(
+            text=title,
+            font=dict(size=13, color="#F8FAFC"),
+            y=0.98,
+            x=0.02,
+            xanchor="left",
+            yanchor="top",
+            pad=dict(b=10),
+        ),
         xaxis=dict(
             title=dict(text="Feature x1", font=dict(color="#CBD5E1")),
             tickfont=dict(color="#CBD5E1"),
@@ -1095,7 +1113,7 @@ def plot_plotly_decision_boundary(
             range=[-2.5, 2.5],
         ),
         dragmode=False,
-        margin=dict(l=20, r=20, t=40, b=20),
+        margin=dict(l=35, r=35, t=85, b=35),
         legend=dict(
             orientation="h",
             yanchor="bottom",
@@ -1103,11 +1121,13 @@ def plot_plotly_decision_boundary(
             xanchor="right",
             x=1,
             font=dict(size=10, color="#CBD5E1"),
-            bgcolor="rgba(15, 23, 42, 0.7)",
+            bgcolor="rgba(15, 23, 42, 0.75)",
+            bordercolor="#334155",
+            borderwidth=1,
         ),
         paper_bgcolor="#0F172A",
         plot_bgcolor="#0F172A",
-        height=420,
+        height=480,
     )
 
     return fig
@@ -1612,11 +1632,12 @@ def plot_plotly_rover_path(
     fig.update_layout(
         title=dict(
             text=title,
-            font=dict(size=13, color="#F8FAFC"),
-            y=0.98,
-            x=0.02,
+            font=dict(size=13.5, color="#F8FAFC"),
+            y=0.985,
+            x=0.015,
             xanchor="left",
             yanchor="top",
+            pad=dict(b=14),
         ),
         xaxis=dict(
             title=dict(text="Coordinate x1", font=dict(color="#CBD5E1")),
@@ -1635,11 +1656,11 @@ def plot_plotly_rover_path(
             range=[-2.5, 2.5],
         ),
         clickmode="event+select",
-        margin=dict(l=40, r=40, t=90, b=40),
+        margin=dict(l=45, r=45, t=115, b=45),
         legend=dict(
             orientation="h",
             yanchor="bottom",
-            y=1.01,
+            y=1.02,
             xanchor="left",
             x=0.0,
             font=dict(size=9.5, color="#CBD5E1"),
@@ -1649,7 +1670,7 @@ def plot_plotly_rover_path(
         ),
         paper_bgcolor="#0F172A",
         plot_bgcolor="#0F172A",
-        height=520,
+        height=560,
     )
     return fig
 
