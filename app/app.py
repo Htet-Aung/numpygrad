@@ -3600,11 +3600,8 @@ def render_neural_pathfinding_tab():
         st.session_state["current_anim_step"] = new_s
         st.session_state["rover_step_slider"] = new_s
 
-    def _cb_start_play():
-        st.session_state["anim_playing"] = True
-
-    def _cb_pause_play():
-        st.session_state["anim_playing"] = False
+    def _cb_toggle_play():
+        st.session_state["anim_playing"] = not st.session_state.get("anim_playing", False)
 
     def _cb_step_forward(max_s: int):
         st.session_state["anim_playing"] = False
@@ -3717,11 +3714,14 @@ def render_neural_pathfinding_tab():
 
             # ---------------- Full Media Transport Bar ----------------
             max_step_limit = len(trajectory) - 1
-            c_first, c_prev, c_play, c_pause, c_next, c_last, c_spd = st.columns([1, 1, 1, 1, 1, 1, 2], vertical_alignment="bottom")
+            is_playing = st.session_state.get("anim_playing", False)
+            c_first, c_prev, c_play_pause, c_next, c_last, c_spd = st.columns([1, 1, 1.2, 1, 1, 2], vertical_alignment="bottom")
             c_first.button("|<< Start", on_click=_cb_jump_start, width="stretch", key="ctrl_start", help="Jump to Step 0")
             c_prev.button("<< -5", on_click=_cb_step_back, width="stretch", key="ctrl_prev", help="Step back 5 frames")
-            c_play.button("Play", on_click=_cb_start_play, type="primary", width="stretch", key="ctrl_play", help="Start continuous animation playback")
-            c_pause.button("Pause", on_click=_cb_pause_play, width="stretch", key="ctrl_pause", help="Pause animation playback")
+            if is_playing:
+                c_play_pause.button("|| Pause", on_click=_cb_toggle_play, type="secondary", width="stretch", key="ctrl_play_pause", help="Pause animation playback")
+            else:
+                c_play_pause.button("> Play", on_click=_cb_toggle_play, type="primary", width="stretch", key="ctrl_play_pause", help="Start continuous animation playback")
             c_next.button("+5 >>", on_click=_cb_step_forward, args=(max_step_limit,), width="stretch", key="ctrl_next", help="Step forward 5 frames")
             c_last.button("End >>|", on_click=_cb_jump_end, args=(max_step_limit,), width="stretch", key="ctrl_end", help="Jump to final step")
             speed_choice = c_spd.select_slider(
@@ -3773,10 +3773,13 @@ def render_neural_pathfinding_tab():
                 start_s = st.session_state.get("current_anim_step", 0)
                 if start_s >= max_step_limit:
                     start_s = 0
+                    st.session_state["current_anim_step"] = 0
+                    st.session_state["rover_step_slider"] = 0
                 for s_idx in range(start_s, max_step_limit + 1):
                     if not st.session_state.get("anim_playing", False):
                         break
                     st.session_state["current_anim_step"] = s_idx
+                    st.session_state["rover_step_slider"] = s_idx
                     cur_p = trajectory[s_idx]
                     cur_d = float(np.linalg.norm(np.array(cur_p) - np.array(target_pos)))
                     cur_h = hazard_history[s_idx] if s_idx < len(hazard_history) else 0.0
@@ -3849,6 +3852,9 @@ def render_neural_pathfinding_tab():
                     time.sleep(playback_delay)
 
                 st.session_state["anim_playing"] = False
+                st.session_state["current_anim_step"] = max_step_limit
+                st.session_state["rover_step_slider"] = max_step_limit
+                st.rerun()
 
             # Static / Scrubber View
             cur_step = max(0, min(st.session_state.get("current_anim_step", max_step_limit), max_step_limit))
@@ -4106,11 +4112,14 @@ def render_neural_pathfinding_tab():
 
             # ---------------- Full Media Transport Bar (Race) ----------------
             max_race_steps = max(len(traj_a), len(traj_b)) - 1
-            c_first, c_prev, c_play, c_pause, c_next, c_last, c_spd = st.columns([1, 1, 1, 1, 1, 1, 2], vertical_alignment="bottom")
+            is_race_playing = st.session_state.get("anim_playing", False)
+            c_first, c_prev, c_play_pause, c_next, c_last, c_spd = st.columns([1, 1, 1.2, 1, 1, 2], vertical_alignment="bottom")
             c_first.button("|<< Start", on_click=_cb_jump_start, width="stretch", key="ctrl_race_start", help="Jump to Step 0")
             c_prev.button("<< -5", on_click=_cb_step_back, width="stretch", key="ctrl_race_prev", help="Step back 5 frames")
-            c_play.button("Play", on_click=_cb_start_play, type="primary", width="stretch", key="ctrl_race_play", help="Start continuous race animation playback")
-            c_pause.button("Pause", on_click=_cb_pause_play, width="stretch", key="ctrl_race_pause", help="Pause race animation playback")
+            if is_race_playing:
+                c_play_pause.button("|| Pause", on_click=_cb_toggle_play, type="secondary", width="stretch", key="ctrl_race_play_pause", help="Pause race animation playback")
+            else:
+                c_play_pause.button("> Play", on_click=_cb_toggle_play, type="primary", width="stretch", key="ctrl_race_play_pause", help="Start continuous race animation playback")
             c_next.button("+5 >>", on_click=_cb_step_forward, args=(max_race_steps,), width="stretch", key="ctrl_race_next", help="Step forward 5 frames")
             c_last.button("End >>|", on_click=_cb_jump_end, args=(max_race_steps,), width="stretch", key="ctrl_race_end", help="Jump to final step")
             speed_choice = c_spd.select_slider(
@@ -4143,10 +4152,13 @@ def render_neural_pathfinding_tab():
                 start_r = st.session_state.get("current_anim_step", 0)
                 if start_r >= max_race_steps:
                     start_r = 0
+                    st.session_state["current_anim_step"] = 0
+                    st.session_state["rover_step_slider"] = 0
                 for r_idx in range(start_r, max_race_steps + 1):
                     if not st.session_state.get("anim_playing", False):
                         break
                     st.session_state["current_anim_step"] = r_idx
+                    st.session_state["rover_step_slider"] = r_idx
                     with dual_chart_placeholder.container():
                         col_a, col_b = st.columns(2)
                         with col_a:
@@ -4186,6 +4198,9 @@ def render_neural_pathfinding_tab():
                     time.sleep(playback_delay)
 
                 st.session_state["anim_playing"] = False
+                st.session_state["current_anim_step"] = max_race_steps
+                st.session_state["rover_step_slider"] = max_race_steps
+                st.rerun()
 
             # Static / Scrubber dual render
             cur_race_s = max(0, min(st.session_state.get("current_anim_step", max_race_steps), max_race_steps))
