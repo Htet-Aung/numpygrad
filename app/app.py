@@ -1408,112 +1408,197 @@ def plot_plotly_rover_path(
     show_rays: bool = True,
     step_index: Optional[int] = None,
     title: str = "Autonomous Neural Rover Simulation",
+    base_fig: Optional[go.Figure] = None,
 ) -> Optional[Any]:
     """Generates an interactive Plotly visualization of the rover path on the neural potential field."""
     if not HAS_PLOTLY:
         return None
 
-    # Full-span decision surface
-    grid_x = np.linspace(-2.5, 2.5, 150).astype(np.float32)
-    grid_y = np.linspace(-2.5, 2.5, 150).astype(np.float32)
-    xx, yy = np.meshgrid(grid_x, grid_y)
-    grid_points = np.c_[xx.ravel(), yy.ravel()].astype(np.float32)
+    if base_fig is not None:
+        fig = go.Figure(base_fig)
+    else:
+        # Full-span decision surface
+        grid_x = np.linspace(-2.5, 2.5, 150).astype(np.float32)
+        grid_y = np.linspace(-2.5, 2.5, 150).astype(np.float32)
+        xx, yy = np.meshgrid(grid_x, grid_y)
+        grid_points = np.c_[xx.ravel(), yy.ravel()].astype(np.float32)
 
-    model.eval()
-    with no_grad():
-        grid_logits = model(Tensor(grid_points, requires_grad=False))
-    exp_logits = np.exp(grid_logits.data - np.max(grid_logits.data, axis=-1, keepdims=True))
-    probs = (exp_logits / np.sum(exp_logits, axis=-1, keepdims=True))[:, 1]
-    Z = probs.reshape(xx.shape)
+        model.eval()
+        with no_grad():
+            grid_logits = model(Tensor(grid_points, requires_grad=False))
+        exp_logits = np.exp(grid_logits.data - np.max(grid_logits.data, axis=-1, keepdims=True))
+        probs = (exp_logits / np.sum(exp_logits, axis=-1, keepdims=True))[:, 1]
+        Z = probs.reshape(xx.shape)
 
-    fig = go.Figure()
+        fig = go.Figure()
 
-    # 1. Background Obstacle Potential Field
-    fig.add_trace(
-        go.Contour(
-            x=grid_x,
-            y=grid_y,
-            z=Z,
-            colorscale="Spectral",
-            reversescale=True,
-            opacity=0.80,
-            showscale=True,
-            contours=dict(
-                start=0.0,
-                end=1.0,
-                size=0.04,
-                coloring="heatmap",
-                showlines=False,
+        # 1. Background Obstacle Potential Field
+        fig.add_trace(
+            go.Contour(
+                x=grid_x,
+                y=grid_y,
+                z=Z,
+                colorscale="Spectral",
+                reversescale=True,
+                opacity=0.80,
+                showscale=True,
+                contours=dict(
+                    start=0.0,
+                    end=1.0,
+                    size=0.04,
+                    coloring="heatmap",
+                    showlines=False,
+                ),
+                line=dict(width=0),
+                colorbar=dict(
+                    title=dict(text="Hazard P(Class 1)", font=dict(size=11, color="white")),
+                    tickfont=dict(color="white"),
+                ),
+                hoverinfo="x+y+z",
+                name="Hazard Surface",
+            )
+        )
+
+        # 1b. Boundary contour at 0.5
+        fig.add_trace(
+            go.Contour(
+                x=grid_x,
+                y=grid_y,
+                z=Z,
+                showscale=False,
+                contours=dict(start=0.5, end=0.5, size=0.0, coloring="none", showlines=True),
+                line=dict(color="#FFFFFF", width=2, dash="dash"),
+                name="Obstacle Perimeter (P=0.5)",
+                hoverinfo="skip",
+            )
+        )
+
+        # 2. Dataset Scatter Points (faded background reference)
+        mask_0 = (y == 0)
+        mask_1 = (y == 1)
+        fig.add_trace(
+            go.Scatter(
+                x=X[mask_0, 0],
+                y=X[mask_0, 1],
+                mode="markers",
+                name="Free Space Data",
+                marker=dict(color="#3B82F6", size=5, opacity=0.35),
+                selected=dict(marker=dict(opacity=0.35)),
+                unselected=dict(marker=dict(opacity=0.35)),
+                hoverinfo="skip",
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=X[mask_1, 0],
+                y=X[mask_1, 1],
+                mode="markers",
+                name="Obstacle Data",
+                marker=dict(color="#EF4444", size=5, opacity=0.35),
+                selected=dict(marker=dict(opacity=0.35)),
+                unselected=dict(marker=dict(opacity=0.35)),
+                hoverinfo="skip",
+            )
+        )
+
+        # 3. Dense Invisible Click-Capture Grid (enables direct click waypoint placement anywhere on canvas)
+        grid_click_x = np.linspace(-2.45, 2.45, 50)
+        grid_click_y = np.linspace(-2.45, 2.45, 50)
+        cg_x, cg_y = np.meshgrid(grid_click_x, grid_click_y)
+        fig.add_trace(
+            go.Scatter(
+                x=cg_x.ravel(),
+                y=cg_y.ravel(),
+                mode="markers",
+                name="Click Capture Grid",
+                marker=dict(size=20, color="rgba(255, 255, 255, 0.01)"),
+                hoverinfo="none",
+                showlegend=False,
+                selected=dict(marker=dict(opacity=0.01)),
+                unselected=dict(marker=dict(opacity=0.01)),
+            )
+        )
+
+        # 6. Start Marker (Green circle)
+        fig.add_trace(
+            go.Scatter(
+                x=[start_pos[0]],
+                y=[start_pos[1]],
+                mode="markers+text",
+                name="Start (S)",
+                text=["START"],
+                textposition="top center",
+                textfont=dict(color="#10B981", size=11),
+                marker=dict(symbol="circle", size=16, color="#10B981", line=dict(color="#FFFFFF", width=2)),
+                selected=dict(marker=dict(opacity=1.0)),
+                unselected=dict(marker=dict(opacity=1.0)),
+                hovertext=[f"Start Position: ({start_pos[0]:.2f}, {start_pos[1]:.2f})"],
+                hoverinfo="text",
+            )
+        )
+
+        # 7. Target Marker (Red Diamond / Goal)
+        fig.add_trace(
+            go.Scatter(
+                x=[target_pos[0]],
+                y=[target_pos[1]],
+                mode="markers+text",
+                name="Target (T)",
+                text=["TARGET"],
+                textposition="top center",
+                textfont=dict(color="#EF4444", size=11),
+                marker=dict(symbol="diamond", size=16, color="#EF4444", line=dict(color="#FFFFFF", width=2)),
+                selected=dict(marker=dict(opacity=1.0)),
+                unselected=dict(marker=dict(opacity=1.0)),
+                hovertext=[f"Target Goal: ({target_pos[0]:.2f}, {target_pos[1]:.2f})"],
+                hoverinfo="text",
+            )
+        )
+
+        fig.update_layout(
+            uirevision="rover_sim_viewport",
+            title=dict(
+                text=title,
+                font=dict(size=13.5, color="#F8FAFC"),
+                y=0.985,
+                x=0.015,
+                xanchor="left",
+                yanchor="top",
+                pad=dict(b=14),
             ),
-            line=dict(width=0),
-            colorbar=dict(
-                title=dict(text="Hazard P(Class 1)", font=dict(size=11, color="white")),
-                tickfont=dict(color="white"),
+            xaxis=dict(
+                title=dict(text="Coordinate x1", font=dict(color="#CBD5E1")),
+                tickfont=dict(color="#CBD5E1"),
+                gridcolor="#334155",
+                zeroline=False,
+                fixedrange=True,
+                range=[-2.5, 2.5],
             ),
-            hoverinfo="x+y+z",
-            name="Hazard Surface",
+            yaxis=dict(
+                title=dict(text="Coordinate x2", font=dict(color="#CBD5E1")),
+                tickfont=dict(color="#CBD5E1"),
+                gridcolor="#334155",
+                zeroline=False,
+                fixedrange=True,
+                range=[-2.5, 2.5],
+            ),
+            clickmode="event+select",
+            margin=dict(l=45, r=45, t=115, b=45),
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="left",
+                x=0.0,
+                font=dict(size=9.5, color="#CBD5E1"),
+                bgcolor="rgba(15, 23, 42, 0.75)",
+                bordercolor="#334155",
+                borderwidth=1,
+            ),
+            paper_bgcolor="#0F172A",
+            plot_bgcolor="#0F172A",
+            height=560,
         )
-    )
-
-    # 1b. Boundary contour at 0.5
-    fig.add_trace(
-        go.Contour(
-            x=grid_x,
-            y=grid_y,
-            z=Z,
-            showscale=False,
-            contours=dict(start=0.5, end=0.5, size=0.0, coloring="none", showlines=True),
-            line=dict(color="#FFFFFF", width=2, dash="dash"),
-            name="Obstacle Perimeter (P=0.5)",
-            hoverinfo="skip",
-        )
-    )
-
-    # 2. Dataset Scatter Points (faded background reference)
-    mask_0 = (y == 0)
-    mask_1 = (y == 1)
-    fig.add_trace(
-        go.Scatter(
-            x=X[mask_0, 0],
-            y=X[mask_0, 1],
-            mode="markers",
-            name="Free Space Data",
-            marker=dict(color="#3B82F6", size=5, opacity=0.35),
-            selected=dict(marker=dict(opacity=0.35)),
-            unselected=dict(marker=dict(opacity=0.35)),
-            hoverinfo="skip",
-        )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=X[mask_1, 0],
-            y=X[mask_1, 1],
-            mode="markers",
-            name="Obstacle Data",
-            marker=dict(color="#EF4444", size=5, opacity=0.35),
-            selected=dict(marker=dict(opacity=0.35)),
-            unselected=dict(marker=dict(opacity=0.35)),
-            hoverinfo="skip",
-        )
-    )
-
-    # 3. Dense Invisible Click-Capture Grid (enables direct click waypoint placement anywhere on canvas)
-    grid_click_x = np.linspace(-2.45, 2.45, 50)
-    grid_click_y = np.linspace(-2.45, 2.45, 50)
-    cg_x, cg_y = np.meshgrid(grid_click_x, grid_click_y)
-    fig.add_trace(
-        go.Scatter(
-            x=cg_x.ravel(),
-            y=cg_y.ravel(),
-            mode="markers",
-            name="Click Capture Grid",
-            marker=dict(size=20, color="rgba(255, 255, 255, 0.01)"),
-            hoverinfo="none",
-            showlegend=False,
-            selected=dict(marker=dict(opacity=0.01)),
-            unselected=dict(marker=dict(opacity=0.01)),
-        )
-    )
 
     has_sim = trajectory is not None and len(trajectory) > 0
 
@@ -1596,44 +1681,7 @@ def plot_plotly_rover_path(
             )
         )
 
-    # 6. Start Marker (Green circle)
-    fig.add_trace(
-        go.Scatter(
-            x=[start_pos[0]],
-            y=[start_pos[1]],
-            mode="markers+text",
-            name="Start (S)",
-            text=["START"],
-            textposition="top center",
-            textfont=dict(color="#10B981", size=11),
-            marker=dict(symbol="circle", size=16, color="#10B981", line=dict(color="#FFFFFF", width=2)),
-            selected=dict(marker=dict(opacity=1.0)),
-            unselected=dict(marker=dict(opacity=1.0)),
-            hovertext=[f"Start Position: ({start_pos[0]:.2f}, {start_pos[1]:.2f})"],
-            hoverinfo="text",
-        )
-    )
-
-    # 7. Target Marker (Red Diamond / Goal)
-    fig.add_trace(
-        go.Scatter(
-            x=[target_pos[0]],
-            y=[target_pos[1]],
-            mode="markers+text",
-            name="Target (T)",
-            text=["TARGET"],
-            textposition="top center",
-            textfont=dict(color="#EF4444", size=11),
-            marker=dict(symbol="diamond", size=16, color="#EF4444", line=dict(color="#FFFFFF", width=2)),
-            selected=dict(marker=dict(opacity=1.0)),
-            unselected=dict(marker=dict(opacity=1.0)),
-            hovertext=[f"Target Goal: ({target_pos[0]:.2f}, {target_pos[1]:.2f})"],
-            hoverinfo="text",
-        )
-    )
-
-    # 8. Active Rover Position Marker (Glowing gold cross at current step)
-    if has_sim:
+        # 8. Active Rover Position Marker (Glowing gold cross at current step)
         curr_rover_pos = active_trajectory[-1]
         fig.add_trace(
             go.Scatter(
@@ -1652,49 +1700,7 @@ def plot_plotly_rover_path(
             )
         )
 
-    fig.update_layout(
-        title=dict(
-            text=title,
-            font=dict(size=13.5, color="#F8FAFC"),
-            y=0.985,
-            x=0.015,
-            xanchor="left",
-            yanchor="top",
-            pad=dict(b=14),
-        ),
-        xaxis=dict(
-            title=dict(text="Coordinate x1", font=dict(color="#CBD5E1")),
-            tickfont=dict(color="#CBD5E1"),
-            gridcolor="#334155",
-            zeroline=False,
-            fixedrange=True,
-            range=[-2.5, 2.5],
-        ),
-        yaxis=dict(
-            title=dict(text="Coordinate x2", font=dict(color="#CBD5E1")),
-            tickfont=dict(color="#CBD5E1"),
-            gridcolor="#334155",
-            zeroline=False,
-            fixedrange=True,
-            range=[-2.5, 2.5],
-        ),
-        clickmode="event+select",
-        margin=dict(l=45, r=45, t=115, b=45),
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="left",
-            x=0.0,
-            font=dict(size=9.5, color="#CBD5E1"),
-            bgcolor="rgba(15, 23, 42, 0.75)",
-            bordercolor="#334155",
-            borderwidth=1,
-        ),
-        paper_bgcolor="#0F172A",
-        plot_bgcolor="#0F172A",
-        height=560,
-    )
+    fig.update_layout(title_text=title, uirevision="rover_sim_viewport")
     return fig
 
 
@@ -3553,6 +3559,12 @@ def render_neural_pathfinding_tab():
             max_steps = st.slider("Max Steps", 20, 180, 120, 5, key="rover_max_steps")
             show_sensor_rays = st.checkbox("Show Sensor Radar Rays", value=True, key="rover_show_rays")
 
+        # Playback State Management
+        if "anim_playing" not in st.session_state:
+            st.session_state["anim_playing"] = False
+        if "current_anim_step" not in st.session_state:
+            st.session_state["current_anim_step"] = 0
+
         btn_label = "Launch Rover Simulation" if nav_mode == "Single Model Mission" else "Start Dual-Model Race"
         launch_rover = st.button(btn_label, type="primary", width="stretch", key="launch_rover_btn")
 
@@ -3564,40 +3576,67 @@ def render_neural_pathfinding_tab():
         st.session_state.pop("rover_sim", None)
         st.session_state.pop("rover_sim_a", None)
         st.session_state.pop("rover_sim_b", None)
+        st.session_state.pop("rover_base_fig", None)
+        st.session_state.pop("rover_base_fig_a", None)
+        st.session_state.pop("rover_base_fig_b", None)
+        st.session_state["anim_playing"] = False
+        st.session_state["current_anim_step"] = 0
+
+    def _cb_jump_start():
+        st.session_state["anim_playing"] = False
+        st.session_state["current_anim_step"] = 0
+        st.session_state["rover_step_slider"] = 0
+
+    def _cb_step_back():
+        st.session_state["anim_playing"] = False
+        cur = st.session_state.get("current_anim_step", 0)
+        new_s = max(0, cur - 5)
+        st.session_state["current_anim_step"] = new_s
+        st.session_state["rover_step_slider"] = new_s
+
+    def _cb_start_play():
+        st.session_state["anim_playing"] = True
+
+    def _cb_pause_play():
+        st.session_state["anim_playing"] = False
+
+    def _cb_step_forward(max_s: int):
+        st.session_state["anim_playing"] = False
+        cur = st.session_state.get("current_anim_step", 0)
+        new_s = min(max_s, cur + 5)
+        st.session_state["current_anim_step"] = new_s
+        st.session_state["rover_step_slider"] = new_s
+
+    def _cb_jump_end(max_s: int):
+        st.session_state["anim_playing"] = False
+        st.session_state["current_anim_step"] = max_s
+        st.session_state["rover_step_slider"] = max_s
+
+    def _cb_slider_step_change():
+        st.session_state["anim_playing"] = False
+        st.session_state["current_anim_step"] = st.session_state.get("rover_step_slider", 0)
 
     # ---------------- Mission Action Bar ----------------
-    col_btn1, col_btn2, col_speed = st.columns([1, 1, 2], vertical_alignment="bottom")
-    with col_btn1:
+    col_act1, col_act2 = st.columns([1, 1], vertical_alignment="bottom")
+    with col_act1:
         launch_main = st.button(
             "Launch Full Mission" if nav_mode == "Single Model Mission" else "Start Dual-Model Race",
             type="primary",
             width="stretch",
             key="rover_launch_main",
         )
-    with col_btn2:
-        play_anim = st.button(
-            "Play Animation" if nav_mode == "Single Model Mission" else "Play Race Animation",
-            type="secondary",
+    with col_act2:
+        st.button(
+            "Auto-Detect Route",
             width="stretch",
-            key="rover_play_anim",
+            key="rover_auto_route_main_btn",
+            on_click=_update_waypoint_coords,
+            kwargs={"auto": True},
         )
-    with col_speed:
-        speed_choice = st.select_slider(
-            "Playback Speed",
-            options=["Slow-Mo (0.18s)", "Normal (0.08s)", "Fast (0.03s)"],
-            value="Normal (0.08s)",
-            key="rover_playback_speed",
-        )
-    speed_delay_map = {
-        "Fast (0.03s)": 0.03,
-        "Normal (0.08s)": 0.08,
-        "Slow-Mo (0.18s)": 0.18,
-    }
-    playback_delay = speed_delay_map.get(speed_choice, 0.08)
 
     # ---------------- SINGLE MODEL MISSION ----------------
     if nav_mode == "Single Model Mission":
-        do_calc = launch_rover or launch_main or play_anim
+        do_calc = launch_rover or launch_main
         if do_calc:
             sim_result = simulate_rover_path(
                 model=model,
@@ -3613,6 +3652,10 @@ def render_neural_pathfinding_tab():
             st.session_state["rover_sim"] = sim_result
             st.session_state["sim_active_start"] = start_pos
             st.session_state["sim_active_target"] = target_pos
+            st.session_state.pop("rover_base_fig", None)
+            st.session_state["anim_playing"] = False
+            st.session_state["current_anim_step"] = 0
+            st.session_state["rover_step_slider"] = 0
         else:
             sim_result = st.session_state.get("rover_sim", None)
 
@@ -3650,25 +3693,96 @@ def render_neural_pathfinding_tab():
                 status_delta = "Timed Out"
                 status_delta_color = "inverse"
 
-            # Create dynamic animation containers
+            # Pre-generate base figure once and cache in session state
+            if "rover_base_fig" not in st.session_state or st.session_state["rover_base_fig"] is None:
+                if HAS_PLOTLY:
+                    st.session_state["rover_base_fig"] = plot_plotly_rover_path(
+                        model=model,
+                        X=X,
+                        y=y,
+                        trajectory=None,
+                        ray_history=None,
+                        start_pos=start_pos,
+                        target_pos=target_pos,
+                        show_rays=False,
+                        title=f"Rover Mission on {dataset_name} ({arch_str})",
+                    )
+            base_fig = st.session_state.get("rover_base_fig", None)
+
+            # ---------------- Full Media Transport Bar ----------------
+            max_step_limit = len(trajectory) - 1
+            c_first, c_prev, c_play, c_pause, c_next, c_last, c_spd = st.columns([1, 1, 1, 1, 1, 1, 2], vertical_alignment="bottom")
+            c_first.button("|<< Start", on_click=_cb_jump_start, width="stretch", key="ctrl_start", help="Jump to Step 0")
+            c_prev.button("<< -5", on_click=_cb_step_back, width="stretch", key="ctrl_prev", help="Step back 5 frames")
+            c_play.button("Play", on_click=_cb_start_play, type="primary", width="stretch", key="ctrl_play", help="Start continuous animation playback")
+            c_pause.button("Pause", on_click=_cb_pause_play, width="stretch", key="ctrl_pause", help="Pause animation playback")
+            c_next.button("+5 >>", on_click=_cb_step_forward, args=(max_step_limit,), width="stretch", key="ctrl_next", help="Step forward 5 frames")
+            c_last.button("End >>|", on_click=_cb_jump_end, args=(max_step_limit,), width="stretch", key="ctrl_end", help="Jump to final step")
+            speed_choice = c_spd.select_slider(
+                "Playback Speed",
+                options=["Slow-Mo (0.18s)", "Normal (0.08s)", "Fast (0.03s)"],
+                value="Normal (0.08s)",
+                key="rover_playback_speed",
+            )
+            speed_delay_map = {
+                "Fast (0.03s)": 0.03,
+                "Normal (0.08s)": 0.08,
+                "Slow-Mo (0.18s)": 0.18,
+            }
+            playback_delay = speed_delay_map.get(speed_choice, 0.08)
+
+            # Interactive Step Playback Scrubber
+            cur_step_val = max(0, min(st.session_state.get("current_anim_step", max_step_limit), max_step_limit))
+            step_idx = st.slider(
+                "Inspect Simulation Step (Scrubber)",
+                min_value=0,
+                max_value=max_step_limit,
+                value=cur_step_val,
+                key="rover_step_slider",
+                on_change=_cb_slider_step_change,
+                help="Scrub through the rover's trajectory to inspect position, heading, and sensor radar rays at each individual step.",
+            )
+
+            # Placement Mode Selector & Waypoint Click Helper
+            col_click_mode, col_click_info = st.columns([1, 1])
+            with col_click_mode:
+                st.radio(
+                    "Click on Map Sets:",
+                    ["Start Point (S) [Green]", "Target Point (T) [Red]"],
+                    horizontal=True,
+                    key="rover_waypoint_click_mode",
+                    help="Click anywhere on the potential field map to position Start (S) or Target (T).",
+                )
+            with col_click_info:
+                if target_haz > 0.50 or start_haz > 0.50:
+                    st.warning("Warning: Waypoint is inside an obstacle zone! Click open blue space or use 'Auto-Detect Route'.")
+                else:
+                    st.caption("Tip: Click anywhere on the contour map to instantly relocate the selected waypoint.")
+
+            # Dynamic animation placeholders
             telemetry_placeholder = st.empty()
             chart_placeholder = st.empty()
 
-            if play_anim:
-                total_steps = len(trajectory) - 1
-                for s_idx in range(len(trajectory)):
+            if st.session_state.get("anim_playing", False):
+                start_s = st.session_state.get("current_anim_step", 0)
+                if start_s >= max_step_limit:
+                    start_s = 0
+                for s_idx in range(start_s, max_step_limit + 1):
+                    if not st.session_state.get("anim_playing", False):
+                        break
+                    st.session_state["current_anim_step"] = s_idx
                     cur_p = trajectory[s_idx]
                     cur_d = float(np.linalg.norm(np.array(cur_p) - np.array(target_pos)))
                     cur_h = hazard_history[s_idx] if s_idx < len(hazard_history) else 0.0
                     cur_inf = s_idx * num_rays + s_idx
 
-                    if s_idx == total_steps:
+                    if s_idx == max_step_limit:
                         s_text = status_text
                         s_delta = status_delta
                         s_color = status_delta_color
                     else:
                         s_text = "Navigating..."
-                        s_delta = f"Step {s_idx}/{total_steps}"
+                        s_delta = f"Step {s_idx}/{max_step_limit}"
                         s_color = "normal"
 
                     with telemetry_placeholder.container():
@@ -3693,7 +3807,8 @@ def render_neural_pathfinding_tab():
                                     target_pos=target_pos,
                                     show_rays=show_sensor_rays,
                                     step_index=s_idx,
-                                    title=f"Live Mission: {dataset_name} ({arch_str}) - Step {s_idx}/{total_steps}",
+                                    title=f"Live Mission: {dataset_name} ({arch_str}) - Step {s_idx}/{max_step_limit}",
+                                    base_fig=base_fig,
                                 )
                                 st.plotly_chart(
                                     fig_live,
@@ -3709,7 +3824,7 @@ def render_neural_pathfinding_tab():
                             st.markdown(
                                 f"""
                                 <div style="background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%); border: 1px solid #334155; border-radius: 10px; padding: 1rem; color: white;">
-                                    <div style="font-size: 0.8rem; text-transform: uppercase; color: #94A3B8; letter-spacing: 0.5px;">Active Step: {s_idx} / {total_steps}</div>
+                                    <div style="font-size: 0.8rem; text-transform: uppercase; color: #94A3B8; letter-spacing: 0.5px;">Active Step: {s_idx} / {max_step_limit}</div>
                                     <div style="font-size: 1.15rem; font-weight: 700; color: #38BDF8; margin: 0.2rem 0;">Current Pos: ({cur_p[0]:.2f}, {cur_p[1]:.2f})</div>
                                     <div style="font-size: 0.85rem; color: #CBD5E1;">
                                         Distance to Goal: <code>{cur_d:.2f}</code> | Instant Hazard: <code>{cur_h*100:.1f}%</code>
@@ -3727,7 +3842,10 @@ def render_neural_pathfinding_tab():
 
                     time.sleep(playback_delay)
 
-            # Static / Post-Animation interactive state
+                st.session_state["anim_playing"] = False
+
+            # Static / Scrubber View
+            cur_step = max(0, min(st.session_state.get("current_anim_step", max_step_limit), max_step_limit))
             with telemetry_placeholder.container():
                 m_stat, m_steps, m_dist, m_haz, m_inf = st.columns(5)
                 m_stat.metric("Mission Status", status_text, delta=status_delta, delta_color=status_delta_color)
@@ -3736,33 +3854,6 @@ def render_neural_pathfinding_tab():
                 m_haz.metric("Max Hazard", f"{max_hazard * 100:.1f}%", delta="Safe" if max_hazard <= 0.55 else "Breached", delta_color="normal" if max_hazard <= 0.55 else "inverse")
                 m_inf.metric("Forward Inferences", f"{total_inferences}")
 
-            # Interactive Step Playback Scrubber
-            step_idx = st.slider(
-                "Inspect Simulation Step (Scrubber)",
-                min_value=0,
-                max_value=len(trajectory) - 1,
-                value=len(trajectory) - 1,
-                key="rover_step_slider",
-                help="Scrub through the rover's trajectory to inspect position, heading, and sensor radar rays at each individual step.",
-            )
-
-            # Placement Mode Selector & Waypoint Click Helper
-            col_click_mode, col_click_info = st.columns([1, 1])
-            with col_click_mode:
-                st.radio(
-                    "Click on Map Sets:",
-                    ["Start Point (S) [Green]", "Target Point (T) [Red]"],
-                    horizontal=True,
-                    key="rover_waypoint_click_mode",
-                    help="Click anywhere on the potential field map to position Start (S) or Target (T).",
-                )
-            with col_click_info:
-                if target_haz > 0.50 or start_haz > 0.50:
-                    st.warning("Warning: Waypoint is inside an obstacle zone! Click open blue space or use 'Auto-Detect Route'.")
-                else:
-                    st.caption("Tip: Click anywhere on the contour map to instantly relocate the selected waypoint.")
-
-            # Visual Simulation Plot & Diagnostics
             with chart_placeholder.container():
                 col_chart, col_details = st.columns([3, 2])
                 with col_chart:
@@ -3776,8 +3867,9 @@ def render_neural_pathfinding_tab():
                             start_pos=start_pos,
                             target_pos=target_pos,
                             show_rays=show_sensor_rays,
-                            step_index=step_idx,
-                            title=f"Rover Mission on {dataset_name} ({arch_str}) - Step {step_idx}/{len(trajectory)-1}",
+                            step_index=cur_step,
+                            title=f"Rover Mission on {dataset_name} ({arch_str}) - Step {cur_step}/{max_step_limit}",
+                            base_fig=base_fig,
                         )
                         st.plotly_chart(
                             fig_rover,
@@ -3788,7 +3880,7 @@ def render_neural_pathfinding_tab():
                             width="stretch",
                         )
                     else:
-                        fig_rover_mpl = plot_rover_path_mpl(model, X, y, trajectory[:step_idx+1], start_pos, target_pos)
+                        fig_rover_mpl = plot_rover_path_mpl(model, X, y, trajectory[:cur_step+1], start_pos, target_pos)
                         st.pyplot(fig_rover_mpl)
                         plt.close(fig_rover_mpl)
 
@@ -3842,8 +3934,8 @@ def render_neural_pathfinding_tab():
                 st.dataframe(table_rows, width="stretch", hide_index=True)
 
         else:
-            # Standby state before "Launch Rover Simulation" is clicked
-            st.info("Mission Waypoints Positioned: Start (S) and Target (T) are set on the field. Click '**Launch Full Mission**' or '**Play Animation**' to simulate autonomous navigation.")
+            # Standby state before "Launch Full Mission" is clicked
+            st.info("Mission Waypoints Positioned: Start (S) and Target (T) are set on the field. Click '**Launch Full Mission**' to calculate the autonomous navigation route.")
 
             # Placement Mode Selector & Waypoint Click Helper (Standby)
             col_click_mode_sb, col_click_info_sb = st.columns([1, 1])
@@ -3908,7 +4000,7 @@ def render_neural_pathfinding_tab():
                     #### Ready for Launch
                     - Adjust Start / Target positions via the sidebar sliders or presets.
                     - Use **Auto-Detect Route** to automatically position waypoints in verified open free space ($P < 0.20$).
-                    - Click **"Play Animation"** to watch real-time step-by-step neural navigation.
+                    - Click **"Launch Full Mission"** to solve the geodesic neural potential field.
                     """
                 )
 
@@ -3926,7 +4018,7 @@ def render_neural_pathfinding_tab():
         params_b = saved_comp.get("params_b", 0)
 
         # Execute dual simulation
-        do_dual = launch_main or play_anim
+        do_dual = launch_rover or launch_main
         if do_dual:
             sim_a = simulate_rover_path(
                 model=model_a,
@@ -3954,6 +4046,11 @@ def render_neural_pathfinding_tab():
             st.session_state["rover_sim_b"] = sim_b
             st.session_state["sim_active_start"] = start_pos
             st.session_state["sim_active_target"] = target_pos
+            st.session_state.pop("rover_base_fig_a", None)
+            st.session_state.pop("rover_base_fig_b", None)
+            st.session_state["anim_playing"] = False
+            st.session_state["current_anim_step"] = 0
+            st.session_state["rover_step_slider"] = 0
         else:
             sim_a = st.session_state.get("rover_sim_a", None)
             sim_b = st.session_state.get("rover_sim_b", None)
@@ -3971,12 +4068,79 @@ def render_neural_pathfinding_tab():
             max_haz_b = max(sim_b["hazard_history"]) if sim_b["hazard_history"] else 0.0
             inferences_b = sim_b["steps_taken"] * num_rays + sim_b["steps_taken"]
 
-            # Shared Scrubber
+            # Pre-generate base figures for Model A & B once
+            if "rover_base_fig_a" not in st.session_state or st.session_state["rover_base_fig_a"] is None:
+                if HAS_PLOTLY:
+                    st.session_state["rover_base_fig_a"] = plot_plotly_rover_path(
+                        model=model_a,
+                        X=X,
+                        y=y,
+                        trajectory=None,
+                        ray_history=None,
+                        start_pos=start_pos,
+                        target_pos=target_pos,
+                        show_rays=False,
+                        title=f"Model A ({arch_a}) Potential Field",
+                    )
+            if "rover_base_fig_b" not in st.session_state or st.session_state["rover_base_fig_b"] is None:
+                if HAS_PLOTLY:
+                    st.session_state["rover_base_fig_b"] = plot_plotly_rover_path(
+                        model=model_b,
+                        X=X,
+                        y=y,
+                        trajectory=None,
+                        ray_history=None,
+                        start_pos=start_pos,
+                        target_pos=target_pos,
+                        show_rays=False,
+                        title=f"Model B ({arch_b}) Potential Field",
+                    )
+            base_fig_a = st.session_state.get("rover_base_fig_a", None)
+            base_fig_b = st.session_state.get("rover_base_fig_b", None)
+
+            # ---------------- Full Media Transport Bar (Race) ----------------
             max_race_steps = max(len(traj_a), len(traj_b)) - 1
+            c_first, c_prev, c_play, c_pause, c_next, c_last, c_spd = st.columns([1, 1, 1, 1, 1, 1, 2], vertical_alignment="bottom")
+            c_first.button("|<< Start", on_click=_cb_jump_start, width="stretch", key="ctrl_race_start", help="Jump to Step 0")
+            c_prev.button("<< -5", on_click=_cb_step_back, width="stretch", key="ctrl_race_prev", help="Step back 5 frames")
+            c_play.button("Play", on_click=_cb_start_play, type="primary", width="stretch", key="ctrl_race_play", help="Start continuous race animation playback")
+            c_pause.button("Pause", on_click=_cb_pause_play, width="stretch", key="ctrl_race_pause", help="Pause race animation playback")
+            c_next.button("+5 >>", on_click=_cb_step_forward, args=(max_race_steps,), width="stretch", key="ctrl_race_next", help="Step forward 5 frames")
+            c_last.button("End >>|", on_click=_cb_jump_end, args=(max_race_steps,), width="stretch", key="ctrl_race_end", help="Jump to final step")
+            speed_choice = c_spd.select_slider(
+                "Playback Speed",
+                options=["Slow-Mo (0.18s)", "Normal (0.08s)", "Fast (0.03s)"],
+                value="Normal (0.08s)",
+                key="rover_race_playback_speed",
+            )
+            speed_delay_map = {
+                "Fast (0.03s)": 0.03,
+                "Normal (0.08s)": 0.08,
+                "Slow-Mo (0.18s)": 0.18,
+            }
+            playback_delay = speed_delay_map.get(speed_choice, 0.08)
+
+            cur_race_val = max(0, min(st.session_state.get("current_anim_step", max_race_steps), max_race_steps))
+            race_step = st.slider(
+                "Synchronized Race Step Playback (Scrubber)",
+                min_value=0,
+                max_value=max_race_steps,
+                value=cur_race_val,
+                key="rover_step_slider",
+                on_change=_cb_slider_step_change,
+                help="Scrub through both rovers simultaneously to observe decision boundary navigation side by side.",
+            )
+
             dual_chart_placeholder = st.empty()
 
-            if play_anim:
-                for r_idx in range(max_race_steps + 1):
+            if st.session_state.get("anim_playing", False):
+                start_r = st.session_state.get("current_anim_step", 0)
+                if start_r >= max_race_steps:
+                    start_r = 0
+                for r_idx in range(start_r, max_race_steps + 1):
+                    if not st.session_state.get("anim_playing", False):
+                        break
+                    st.session_state["current_anim_step"] = r_idx
                     with dual_chart_placeholder.container():
                         col_a, col_b = st.columns(2)
                         with col_a:
@@ -3993,6 +4157,7 @@ def render_neural_pathfinding_tab():
                                     show_rays=show_sensor_rays,
                                     step_index=min(r_idx, len(traj_a) - 1),
                                     title=f"Model A ({arch_a}) - Step {min(r_idx, len(traj_a)-1)}/{len(traj_a)-1}",
+                                    base_fig=base_fig_a,
                                 )
                                 st.plotly_chart(fig_a_live, config={"displayModeBar": False, "scrollZoom": False}, width="stretch")
                         with col_b:
@@ -4009,19 +4174,15 @@ def render_neural_pathfinding_tab():
                                     show_rays=show_sensor_rays,
                                     step_index=min(r_idx, len(traj_b) - 1),
                                     title=f"Model B ({arch_b}) - Step {min(r_idx, len(traj_b)-1)}/{len(traj_b)-1}",
+                                    base_fig=base_fig_b,
                                 )
                                 st.plotly_chart(fig_b_live, config={"displayModeBar": False, "scrollZoom": False}, width="stretch")
                     time.sleep(playback_delay)
 
-            race_step = st.slider(
-                "Synchronized Race Step Playback (Scrubber)",
-                min_value=0,
-                max_value=max_race_steps,
-                value=max_race_steps,
-                key="rover_race_slider",
-                help="Scrub through both rovers simultaneously to observe decision boundary navigation side by side.",
-            )
+                st.session_state["anim_playing"] = False
 
+            # Static / Scrubber dual render
+            cur_race_s = max(0, min(st.session_state.get("current_anim_step", max_race_steps), max_race_steps))
             with dual_chart_placeholder.container():
                 col_a, col_b = st.columns(2)
                 with col_a:
@@ -4037,8 +4198,9 @@ def render_neural_pathfinding_tab():
                             start_pos=start_pos,
                             target_pos=target_pos,
                             show_rays=show_sensor_rays,
-                            step_index=min(race_step, len(traj_a) - 1),
+                            step_index=min(cur_race_s, len(traj_a) - 1),
                             title=f"Model A ({arch_a}) Potential Field",
+                            base_fig=base_fig_a,
                         )
                         st.plotly_chart(
                             fig_a,
@@ -4047,7 +4209,7 @@ def render_neural_pathfinding_tab():
                             width="stretch",
                         )
                     else:
-                        fig_a_mpl = plot_rover_path_mpl(model_a, X, y, traj_a[:min(race_step, len(traj_a)-1)+1], start_pos, target_pos)
+                        fig_a_mpl = plot_rover_path_mpl(model_a, X, y, traj_a[:min(cur_race_s, len(traj_a)-1)+1], start_pos, target_pos)
                         st.pyplot(fig_a_mpl)
                         plt.close(fig_a_mpl)
 
@@ -4064,8 +4226,9 @@ def render_neural_pathfinding_tab():
                             start_pos=start_pos,
                             target_pos=target_pos,
                             show_rays=show_sensor_rays,
-                            step_index=min(race_step, len(traj_b) - 1),
+                            step_index=min(cur_race_s, len(traj_b) - 1),
                             title=f"Model B ({arch_b}) Potential Field",
+                            base_fig=base_fig_b,
                         )
                         st.plotly_chart(
                             fig_b,
@@ -4074,7 +4237,7 @@ def render_neural_pathfinding_tab():
                             width="stretch",
                         )
                     else:
-                        fig_b_mpl = plot_rover_path_mpl(model_b, X, y, traj_b[:min(race_step, len(traj_b)-1)+1], start_pos, target_pos)
+                        fig_b_mpl = plot_rover_path_mpl(model_b, X, y, traj_b[:min(cur_race_s, len(traj_b)-1)+1], start_pos, target_pos)
                         st.pyplot(fig_b_mpl)
                         plt.close(fig_b_mpl)
 
@@ -4094,7 +4257,7 @@ def render_neural_pathfinding_tab():
             ]
             st.dataframe(race_table, width="stretch", hide_index=True)
         else:
-            st.info("Race Waypoints Configured: Start (S) and Target (T) are set on the field. Click '**Start Dual-Model Race**' or '**Play Race Animation**' to benchmark both models.")
+            st.info("Race Waypoints Configured: Start (S) and Target (T) are set on the field. Click '**Start Dual-Model Race**' to benchmark both models.")
             col_a, col_b = st.columns(2)
             with col_a:
                 st.subheader(f"Model A: {arch_a}")
