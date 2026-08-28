@@ -361,6 +361,44 @@ st.markdown(
         font-size: 0.82rem !important;
         white-space: nowrap !important;
     }
+
+    /* Modernize Plotly updatemenu buttons and fix contrast */
+    .updatemenu-button,
+    .updatemenu-button rect,
+    .updatemenu-container rect,
+    g.updatemenu-button-group rect {
+        rx: 6px !important;
+        ry: 6px !important;
+        transition: fill 0.15s ease, stroke 0.15s ease !important;
+    }
+    .updatemenu-button text,
+    .updatemenu-container text,
+    g.updatemenu-button-group text {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+        font-weight: 500 !important;
+        fill: #F8FAFC !important;
+    }
+    .updatemenu-button:hover rect,
+    .updatemenu-container .updatemenu-button:hover rect {
+        fill: #334155 !important;
+        stroke: #38BDF8 !important;
+    }
+    .updatemenu-button:hover text,
+    .updatemenu-container .updatemenu-button:hover text {
+        fill: #FFFFFF !important;
+    }
+    .updatemenu-button.active rect,
+    .updatemenu-button[data-active="true"] rect,
+    .updatemenu-container .updatemenu-button.active rect {
+        fill: #0284C7 !important;
+        stroke: #38BDF8 !important;
+    }
+    .updatemenu-button.active text,
+    .updatemenu-button[data-active="true"] text,
+    .updatemenu-container .updatemenu-button.active text {
+        fill: #FFFFFF !important;
+        font-weight: 600 !important;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -1726,11 +1764,11 @@ def plot_plotly_rover_path(
                 y=-0.16,
                 xanchor="left",
                 yanchor="top",
-                pad=dict(r=6, t=4, b=4),
+                pad=dict(r=10, t=6, b=6, l=10),
                 bgcolor="#1E293B",
-                bordercolor="#334155",
+                bordercolor="#475569",
                 borderwidth=1,
-                font=dict(color="#F8FAFC", size=10.5),
+                font=dict(color="#F8FAFC", size=11, family="sans-serif"),
                 buttons=[
                     dict(
                         label="0.5x Slow",
@@ -1795,11 +1833,11 @@ def plot_plotly_rover_path(
                 y=-0.28,
                 xanchor="left",
                 yanchor="top",
-                pad=dict(r=8, t=6, b=6),
+                pad=dict(r=10, t=6, b=6, l=10),
                 bgcolor="#1E293B",
-                bordercolor="#38BDF8",
-                borderwidth=1.5,
-                font=dict(color="#38BDF8", size=11, family="sans-serif"),
+                bordercolor="#475569",
+                borderwidth=1,
+                font=dict(color="#F8FAFC", size=11, family="sans-serif"),
                 buttons=[
                     dict(
                         label="Play / Pause",
@@ -1842,8 +1880,8 @@ def plot_plotly_rover_path(
                     visible=True,
                     xanchor="right",
                 ),
-                font=dict(color="#CBD5E1", size=10),
-                bgcolor="rgba(30, 41, 59, 0.9)",
+                font=dict(color="#94A3B8", size=10),
+                bgcolor="#0F172A",
                 bordercolor="#334155",
                 tickcolor="#475569",
                 ticklen=4,
