@@ -1717,12 +1717,12 @@ def plot_plotly_rover_path(
                 type="buttons",
                 showactive=False,
                 direction="left",
-                x=0.015,
-                y=-0.12,
+                x=0.0,
+                y=-0.22,
                 xanchor="left",
                 yanchor="top",
-                pad=dict(t=8, r=10),
-                bgcolor="rgba(30, 41, 59, 0.9)",
+                pad=dict(r=8, t=8, b=8),
+                bgcolor="#1E293B",
                 bordercolor="#334155",
                 borderwidth=1,
                 font=dict(color="#F8FAFC", size=11),
@@ -1760,12 +1760,12 @@ def plot_plotly_rover_path(
             dict(
                 active=active_step,
                 steps=slider_steps,
-                x=0.18,
-                y=-0.12,
-                len=0.80,
+                x=0.22,
+                y=-0.22,
+                len=0.76,
                 xanchor="left",
                 yanchor="top",
-                pad=dict(t=8, b=10),
+                pad=dict(t=8, b=8),
                 currentvalue=dict(
                     font=dict(size=12, color="#38BDF8"),
                     prefix="Step: ",
@@ -1773,9 +1773,9 @@ def plot_plotly_rover_path(
                     xanchor="right",
                 ),
                 font=dict(color="#CBD5E1", size=10),
-                bgcolor="rgba(30, 41, 59, 0.8)",
+                bgcolor="rgba(30, 41, 59, 0.9)",
                 bordercolor="#334155",
-                tickcolor="#334155",
+                tickcolor="#475569",
                 ticklen=4,
             )
         ]
@@ -1795,7 +1795,7 @@ def plot_plotly_rover_path(
             pad=dict(b=14),
         ),
         xaxis=dict(
-            title=dict(text="Coordinate x1", font=dict(color="#CBD5E1")),
+            title=dict(text="Coordinate x1", font=dict(color="#CBD5E1"), standoff=12),
             tickfont=dict(color="#CBD5E1"),
             gridcolor="#334155",
             zeroline=False,
@@ -1811,7 +1811,7 @@ def plot_plotly_rover_path(
             range=[-2.5, 2.5],
         ),
         clickmode="event+select",
-        margin=dict(l=45, r=45, t=115, b=85 if has_sim else 45),
+        margin=dict(l=45, r=45, t=115, b=110 if has_sim else 45),
         legend=dict(
             orientation="h",
             yanchor="bottom",
@@ -1827,7 +1827,7 @@ def plot_plotly_rover_path(
         sliders=sliders,
         paper_bgcolor="#0F172A",
         plot_bgcolor="#0F172A",
-        height=620 if has_sim else 560,
+        height=640 if has_sim else 560,
     )
     return fig
 
@@ -3780,8 +3780,8 @@ def render_neural_pathfinding_tab():
             m_haz.metric("Max Hazard", f"{max_hazard * 100:.1f}%", delta="Safe" if max_hazard <= 0.55 else "Breached", delta_color="normal" if max_hazard <= 0.55 else "inverse")
             m_inf.metric("Forward Inferences", f"{total_inferences}")
 
-            # Placement Mode Selector & Waypoint Click Helper
-            col_click_mode, col_click_info = st.columns([1, 1])
+            # Placement Mode Selector & Waypoint Click Helper & Speed Control
+            col_click_mode, col_click_info, col_speed = st.columns([1.4, 1.3, 1.3], vertical_alignment="bottom")
             with col_click_mode:
                 st.radio(
                     "Click on Map Sets:",
@@ -3795,6 +3795,21 @@ def render_neural_pathfinding_tab():
                     st.warning("Warning: Waypoint is inside an obstacle zone! Click open blue space or use 'Auto-Detect Route'.")
                 else:
                     st.caption("Tip: Click anywhere on the contour map to instantly relocate the selected waypoint.")
+            with col_speed:
+                speed_choice = st.select_slider(
+                    "Playback Speed",
+                    options=["0.5x (120ms)", "1.0x (60ms)", "2.0x (30ms)", "4.0x (15ms)"],
+                    value="1.0x (60ms)",
+                    key="rover_playback_speed_slider",
+                    help="Adjust animation playback rate.",
+                )
+            speed_duration_map = {
+                "0.5x (120ms)": 120,
+                "1.0x (60ms)": 60,
+                "2.0x (30ms)": 30,
+                "4.0x (15ms)": 15,
+            }
+            frame_duration = speed_duration_map.get(speed_choice, 60)
 
             col_chart, col_details = st.columns([3, 2])
             with col_chart:
@@ -3808,6 +3823,7 @@ def render_neural_pathfinding_tab():
                         start_pos=start_pos,
                         target_pos=target_pos,
                         show_rays=show_sensor_rays,
+                        frame_duration=frame_duration,
                         title=f"Rover Mission on {dataset_name} ({arch_str}) - {steps_taken} Steps",
                     )
                     st.plotly_chart(
@@ -4002,6 +4018,26 @@ def render_neural_pathfinding_tab():
             max_haz_b = max(sim_b["hazard_history"]) if sim_b["hazard_history"] else 0.0
             inferences_b = sim_b["steps_taken"] * num_rays + sim_b["steps_taken"]
 
+            # Dual-Model Race Speed Control
+            col_race_hdr, col_race_spd = st.columns([3, 1], vertical_alignment="bottom")
+            with col_race_hdr:
+                st.caption("Autonomous race comparing decision boundary geodesic flow navigation.")
+            with col_race_spd:
+                speed_choice_race = st.select_slider(
+                    "Race Speed",
+                    options=["0.5x (120ms)", "1.0x (60ms)", "2.0x (30ms)", "4.0x (15ms)"],
+                    value="1.0x (60ms)",
+                    key="rover_race_speed_slider",
+                    help="Adjust race playback rate.",
+                )
+            speed_duration_map = {
+                "0.5x (120ms)": 120,
+                "1.0x (60ms)": 60,
+                "2.0x (30ms)": 30,
+                "4.0x (15ms)": 15,
+            }
+            frame_duration = speed_duration_map.get(speed_choice_race, 60)
+
             col_a, col_b = st.columns(2)
             with col_a:
                 st.subheader(f"Model A: {arch_a}")
@@ -4016,6 +4052,7 @@ def render_neural_pathfinding_tab():
                         start_pos=start_pos,
                         target_pos=target_pos,
                         show_rays=show_sensor_rays,
+                        frame_duration=frame_duration,
                         title=f"Model A ({arch_a}) Potential Field",
                     )
                     st.plotly_chart(
@@ -4042,6 +4079,7 @@ def render_neural_pathfinding_tab():
                         start_pos=start_pos,
                         target_pos=target_pos,
                         show_rays=show_sensor_rays,
+                        frame_duration=frame_duration,
                         title=f"Model B ({arch_b}) Potential Field",
                     )
                     st.plotly_chart(
