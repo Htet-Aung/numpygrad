@@ -13,21 +13,142 @@ from numpygrad.core.tensor import Tensor, no_grad
 import numpygrad.nn as nn
 
 
+def compute_geodesic_flow(
+    model: nn.Module,
+    target_pos: Tuple[float, float],
+    grid_bounds: Tuple[float, float] = (-2.4, 2.4),
+    resolution: int = 45,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Computes an intelligent corridor-aware neural geodesic guidance flow field
+    toward `target_pos` over the model's safe probability terrain.
+
+    Parameters
+    ----------
+    model : nn.Module
+        Trained 2D neural network predicting obstacle classification probabilities.
+    target_pos : Tuple[float, float]
+        Target goal (x, y) coordinates.
+    grid_bounds : Tuple[float, float]
+        Coordinate span along each spatial dimension.
+    resolution : int
+        Number of discrete grid points per dimension.
+
+    Returns
+    -------
+    Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+        (grid_x, grid_y, flow_x, flow_y) containing coordinate axes and normalized 2D flow vectors.
+    """
+    import heapq
+
+    model.eval()
+    grid_x = np.linspace(grid_bounds[0], grid_bounds[1], resolution, dtype=np.float32)
+    grid_y = np.linspace(grid_bounds[0], grid_bounds[1], resolution, dtype=np.float32)
+    xx, yy = np.meshgrid(grid_x, grid_y)
+    grid_points = np.stack([xx.ravel(), yy.ravel()], axis=-1)
+
+    with no_grad():
+        logits = model(Tensor(grid_points, requires_grad=False)).data
+        exp_l = np.exp(logits - np.max(logits, axis=-1, keepdims=True))
+        probs = (exp_l / np.sum(exp_l, axis=-1, keepdims=True))[:, 1]
+    hazard_map = probs.reshape((resolution, resolution))
+
+    # Cell traversal cost: massive penalty for obstacle regions (Class 1) to prevent wall tunneling
+    cost_map = np.where(hazard_map > 0.40, 800.0, 1.0 + 30.0 * (hazard_map ** 2))
+
+    # 8-connected Dijkstra distance transform starting from the grid cell containing target_pos
+    tc = int(np.clip(np.argmin(np.abs(grid_x - target_pos[0])), 0, resolution - 1))
+    tr = int(np.clip(np.argmin(np.abs(grid_y - target_pos[1])), 0, resolution - 1))
+
+    dist = np.full((resolution, resolution), np.inf, dtype=np.float64)
+    dist[tr, tc] = 0.0
+    pq = [(0.0, tr, tc)]
+
+    dx = float(grid_x[1] - grid_x[0])
+    dy = float(grid_y[1] - grid_y[0])
+
+    while pq:
+        d, r, c = heapq.heappop(pq)
+        if d > dist[r, c]:
+            continue
+        for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)]:
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < resolution and 0 <= nc < resolution:
+                step_metric = np.sqrt((dr * dy) ** 2 + (dc * dx) ** 2)
+                c_edge = step_metric * 0.5 * (cost_map[r, c] + cost_map[nr, nc])
+                if d + c_edge < dist[nr, nc]:
+                    dist[nr, nc] = d + c_edge
+                    heapq.heappush(pq, (d + c_edge, nr, nc))
+
+    # Negative gradient of distance field points towards goal along lowest-cost corridors
+    gy, gx = np.gradient(dist, dy, dx)
+    flow_x = -gx.astype(np.float32)
+    flow_y = -gy.astype(np.float32)
+    fnorm = np.sqrt(flow_x ** 2 + flow_y ** 2)
+    valid = fnorm > 1e-6
+    flow_x[valid] /= fnorm[valid]
+    flow_y[valid] /= fnorm[valid]
+    flow_x[~valid] = 0.0
+    flow_y[~valid] = 0.0
+
+    return grid_x, grid_y, flow_x, flow_y
+
+
+def sample_geodesic_vector(
+    pos: np.ndarray,
+    target: np.ndarray,
+    grid_x: np.ndarray,
+    grid_y: np.ndarray,
+    flow_x: np.ndarray,
+    flow_y: np.ndarray,
+) -> np.ndarray:
+    """Samples the 2D unit guidance vector at continuous coordinate `pos` via bilinear interpolation."""
+    res = len(grid_x)
+    dx = float(grid_x[1] - grid_x[0])
+    dy = float(grid_y[1] - grid_y[0])
+
+    c_flt = (pos[0] - grid_x[0]) / dx
+    r_flt = (pos[1] - grid_y[0]) / dy
+
+    if 0 <= c_flt <= res - 1 and 0 <= r_flt <= res - 1:
+        c0 = int(np.clip(np.floor(c_flt), 0, res - 2))
+        r0 = int(np.clip(np.floor(r_flt), 0, res - 2))
+        c1, r1 = c0 + 1, r0 + 1
+
+        wc1 = c_flt - c0
+        wc0 = 1.0 - wc1
+        wr1 = r_flt - r0
+        wr0 = 1.0 - wr1
+
+        vx = wr0 * (wc0 * flow_x[r0, c0] + wc1 * flow_x[r0, c1]) + wr1 * (wc0 * flow_x[r1, c0] + wc1 * flow_x[r1, c1])
+        vy = wr0 * (wc0 * flow_y[r0, c0] + wc1 * flow_y[r0, c1]) + wr1 * (wc0 * flow_y[r1, c0] + wc1 * flow_y[r1, c1])
+        v = np.array([vx, vy], dtype=np.float32)
+        v_norm = float(np.linalg.norm(v))
+        if v_norm > 1e-4:
+            return v / v_norm
+
+    to_t = target - pos
+    t_norm = float(np.linalg.norm(to_t))
+    if t_norm > 1e-6:
+        return to_t / t_norm
+    return np.array([1.0, 0.0], dtype=np.float32)
+
+
 def simulate_rover_path(
     model: nn.Module,
     start_pos: Tuple[float, float] = (-1.80, 1.20),
     target_pos: Tuple[float, float] = (1.20, 0.70),
-    max_steps: int = 80,
-    step_size: float = 0.12,
+    max_steps: int = 120,
+    step_size: float = 0.09,
     num_rays: int = 5,
     ray_len: float = 0.35,
-    avoidance_weight: float = 2.0,
-    tangent_weight: float = 1.5,
+    avoidance_weight: float = 1.8,
+    tangent_weight: float = 1.2,
     hazard_threshold: float = 0.55,
 ) -> Dict[str, Any]:
     """
     Simulates an autonomous rover navigating from `start_pos` to `target_pos`
-    using forward ray-casting and tangential wall-following against a trained neural obstacle field.
+    using Neural Geodesic Flow Field guidance, forward ray-casting, and momentum smoothing.
 
     Parameters
     ----------
@@ -70,11 +191,20 @@ def simulate_rover_path(
     current_pos = np.array(start_pos, dtype=np.float32)
     target = np.array(target_pos, dtype=np.float32)
 
+    # 1. Precompute Neural Geodesic Flow Field towards target_pos
+    grid_x, grid_y, flow_x, flow_y = compute_geodesic_flow(
+        model=model,
+        target_pos=target_pos,
+        grid_bounds=(-2.4, 2.4),
+        resolution=45,
+    )
+
     trajectory: List[Tuple[float, float]] = [tuple(current_pos.tolist())]
     ray_history: List[List[Dict[str, Any]]] = []
     hazard_history: List[float] = []
     collision_count: int = 0
     success: bool = False
+    prev_v: Optional[np.ndarray] = None
 
     # Half-angle spread in radians (50 degrees)
     spread_rad = 50.0 * (np.pi / 180.0)
@@ -97,13 +227,13 @@ def simulate_rover_path(
         if cur_hazard > hazard_threshold:
             collision_count += 1
 
-        if dist_to_target <= step_size:
+        if dist_to_target <= max(step_size, 0.15):
             trajectory.append(tuple(target.tolist()))
             success = True
             break
 
-        # 2. Attractive goal unit vector
-        v_goal = to_target / (dist_to_target + 1e-9)
+        # 2. Intelligent Geodesic Corridor Guidance Vector
+        v_goal = sample_geodesic_vector(current_pos, target, grid_x, grid_y, flow_x, flow_y)
         base_heading = np.arctan2(v_goal[1], v_goal[0])
 
         # 3. Cast forward sensory rays
@@ -139,40 +269,47 @@ def simulate_rover_path(
                 "unit_vector": tuple(u_i.tolist()),
                 "hazard": h_val,
             })
-            # Repulsive force points away from sensed hazard
-            v_avoid -= h_val * u_i
+            # Repulsive force points away from sensed obstacle breaches
+            if h_val > 0.50:
+                v_avoid -= (h_val - 0.50) * u_i
 
         ray_history.append(step_rays)
 
-        # 5. Combine attractive, repulsive, and tangential wall-following potential vectors
+        # 5. Combine corridor guidance and local obstacle avoidance
         v_avoid_norm = float(np.linalg.norm(v_avoid))
-        if v_avoid_norm > 0.1:
-            # 2D Perpendicular tangent vector [-v_avoid_y, v_avoid_x]
-            v_tangent = np.array([-v_avoid[1], v_avoid[0]], dtype=np.float32)
-
-            # Choose the tangent direction (CW vs CCW) that points toward the goal
-            if float(np.dot(v_tangent, v_goal)) < 0.0:
-                v_tangent = -v_tangent
-
-            v_total = v_goal + avoidance_weight * v_avoid + tangent_weight * v_tangent
+        if v_avoid_norm > 0.05:
+            v_avoid = v_avoid / v_avoid_norm
+            v_total = v_goal + (avoidance_weight * 0.40) * v_avoid
         else:
             v_total = v_goal
 
-        v_norm = float(np.linalg.norm(v_total))
-        if v_norm > 1e-6:
-            u_step = v_total / v_norm
+        v_total_norm = float(np.linalg.norm(v_total))
+        if v_total_norm > 1e-6:
+            v_raw = v_total / v_total_norm
         else:
-            u_step = v_goal
+            v_raw = v_goal
 
-        # 6. Step rover forward
-        next_pos = current_pos + step_size * u_step
-        next_pos = np.clip(next_pos, -3.0, 3.0)
+        # 6. Momentum / Velocity Smoothing to prevent jitter near corridor walls
+        if prev_v is None:
+            v_smooth = v_raw
+        else:
+            v_smooth = 0.80 * v_raw + 0.20 * prev_v
+            v_s_norm = float(np.linalg.norm(v_smooth))
+            if v_s_norm > 1e-6:
+                v_smooth = v_smooth / v_s_norm
+            else:
+                v_smooth = v_raw
+        prev_v = v_smooth
+
+        # 7. Step rover forward
+        next_pos = current_pos + step_size * v_smooth
+        next_pos = np.clip(next_pos, -2.45, 2.45)
 
         current_pos = next_pos
         trajectory.append(tuple(current_pos.tolist()))
 
     final_distance = float(np.linalg.norm(target - np.array(trajectory[-1])))
-    if final_distance <= step_size:
+    if final_distance <= max(step_size, 0.15):
         success = True
 
     return {
@@ -188,7 +325,7 @@ def simulate_rover_path(
 
 def find_safe_waypoints(
     model: nn.Module,
-    grid_bounds: Tuple[float, float] = (-2.2, 2.2),
+    grid_bounds: Tuple[float, float] = (-1.85, 1.85),
     resolution: int = 35,
     max_hazard: float = 0.20,
     min_distance: float = 2.0,

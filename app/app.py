@@ -3522,12 +3522,12 @@ def render_neural_pathfinding_tab():
                 st.warning(f"Start is inside an obstacle zone ({start_haz*100:.1f}% hazard). Use 'Auto-Detect Route' to snap to open space.")
 
         with st.expander("Physical Simulation Tuning", expanded=True):
-            step_size = st.slider("Step Size (Speed)", 0.04, 0.25, 0.12, 0.01, key="rover_step_size")
+            step_size = st.slider("Step Size (Speed)", 0.04, 0.25, 0.09, 0.01, key="rover_step_size")
             ray_len = st.slider("Sensor Lookahead", 0.15, 0.70, 0.35, 0.05, key="rover_ray_len")
-            avoidance_weight = st.slider("Repulsion Weight", 0.5, 6.0, 2.0, 0.25, key="rover_avoid_wt")
-            tangent_weight = st.slider("Tangent Wall-Following Weight", 0.0, 4.0, 1.5, 0.25, key="rover_tangent_wt")
+            avoidance_weight = st.slider("Repulsion Weight", 0.5, 6.0, 1.8, 0.25, key="rover_avoid_wt")
+            tangent_weight = st.slider("Tangent Wall-Following Weight", 0.0, 4.0, 1.2, 0.25, key="rover_tangent_wt")
             num_rays = st.slider("Sensor Ray Count", 3, 9, 5, 2, key="rover_num_rays")
-            max_steps = st.slider("Max Steps", 20, 150, 80, 5, key="rover_max_steps")
+            max_steps = st.slider("Max Steps", 20, 180, 120, 5, key="rover_max_steps")
             show_sensor_rays = st.checkbox("Show Sensor Radar Rays", value=True, key="rover_show_rays")
 
         btn_label = "Launch Rover Simulation" if nav_mode == "Single Model Mission" else "Start Dual-Model Race"
