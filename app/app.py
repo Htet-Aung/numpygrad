@@ -3739,6 +3739,7 @@ def render_neural_pathfinding_tab():
 
             # Interactive Step Playback Scrubber
             cur_step_val = max(0, min(st.session_state.get("current_anim_step", max_step_limit), max_step_limit))
+            st.session_state["rover_step_slider"] = cur_step_val
             step_idx = st.slider(
                 "Inspect Simulation Step (Scrubber)",
                 min_value=0,
@@ -3774,12 +3775,10 @@ def render_neural_pathfinding_tab():
                 if start_s >= max_step_limit:
                     start_s = 0
                     st.session_state["current_anim_step"] = 0
-                    st.session_state["rover_step_slider"] = 0
                 for s_idx in range(start_s, max_step_limit + 1):
                     if not st.session_state.get("anim_playing", False):
                         break
                     st.session_state["current_anim_step"] = s_idx
-                    st.session_state["rover_step_slider"] = s_idx
                     cur_p = trajectory[s_idx]
                     cur_d = float(np.linalg.norm(np.array(cur_p) - np.array(target_pos)))
                     cur_h = hazard_history[s_idx] if s_idx < len(hazard_history) else 0.0
@@ -3853,7 +3852,6 @@ def render_neural_pathfinding_tab():
 
                 st.session_state["anim_playing"] = False
                 st.session_state["current_anim_step"] = max_step_limit
-                st.session_state["rover_step_slider"] = max_step_limit
                 st.rerun()
 
             # Static / Scrubber View
@@ -4136,6 +4134,7 @@ def render_neural_pathfinding_tab():
             playback_delay = speed_delay_map.get(speed_choice, 0.08)
 
             cur_race_val = max(0, min(st.session_state.get("current_anim_step", max_race_steps), max_race_steps))
+            st.session_state["rover_step_slider"] = cur_race_val
             race_step = st.slider(
                 "Synchronized Race Step Playback (Scrubber)",
                 min_value=0,
@@ -4153,12 +4152,10 @@ def render_neural_pathfinding_tab():
                 if start_r >= max_race_steps:
                     start_r = 0
                     st.session_state["current_anim_step"] = 0
-                    st.session_state["rover_step_slider"] = 0
                 for r_idx in range(start_r, max_race_steps + 1):
                     if not st.session_state.get("anim_playing", False):
                         break
                     st.session_state["current_anim_step"] = r_idx
-                    st.session_state["rover_step_slider"] = r_idx
                     with dual_chart_placeholder.container():
                         col_a, col_b = st.columns(2)
                         with col_a:
@@ -4199,7 +4196,6 @@ def render_neural_pathfinding_tab():
 
                 st.session_state["anim_playing"] = False
                 st.session_state["current_anim_step"] = max_race_steps
-                st.session_state["rover_step_slider"] = max_race_steps
                 st.rerun()
 
             # Static / Scrubber dual render
