@@ -1610,7 +1610,14 @@ def plot_plotly_rover_path(
         )
 
     fig.update_layout(
-        title=dict(text=title, font=dict(size=14, color="#F8FAFC")),
+        title=dict(
+            text=title,
+            font=dict(size=13, color="#F8FAFC"),
+            y=0.98,
+            x=0.02,
+            xanchor="left",
+            yanchor="top",
+        ),
         xaxis=dict(
             title=dict(text="Coordinate x1", font=dict(color="#CBD5E1")),
             tickfont=dict(color="#CBD5E1"),
@@ -1628,19 +1635,21 @@ def plot_plotly_rover_path(
             range=[-2.5, 2.5],
         ),
         clickmode="event+select",
-        margin=dict(l=20, r=20, t=40, b=20),
+        margin=dict(l=40, r=40, t=90, b=40),
         legend=dict(
             orientation="h",
             yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1,
-            font=dict(size=10, color="#CBD5E1"),
-            bgcolor="rgba(15, 23, 42, 0.7)",
+            y=1.01,
+            xanchor="left",
+            x=0.0,
+            font=dict(size=9.5, color="#CBD5E1"),
+            bgcolor="rgba(15, 23, 42, 0.75)",
+            bordercolor="#334155",
+            borderwidth=1,
         ),
         paper_bgcolor="#0F172A",
         plot_bgcolor="#0F172A",
-        height=480,
+        height=520,
     )
     return fig
 
