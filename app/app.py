@@ -3542,9 +3542,40 @@ def render_neural_pathfinding_tab():
         st.session_state.pop("rover_sim_a", None)
         st.session_state.pop("rover_sim_b", None)
 
+    # ---------------- Mission Action Bar ----------------
+    col_btn1, col_btn2, col_speed = st.columns([1, 1, 2])
+    with col_btn1:
+        launch_main = st.button(
+            "Launch Full Mission" if nav_mode == "Single Model Mission" else "Start Dual-Model Race",
+            type="primary",
+            width="stretch",
+            key="rover_launch_main",
+        )
+    with col_btn2:
+        play_anim = st.button(
+            "Play Animation" if nav_mode == "Single Model Mission" else "Play Race Animation",
+            type="secondary",
+            width="stretch",
+            key="rover_play_anim",
+        )
+    with col_speed:
+        speed_choice = st.select_slider(
+            "Playback Speed",
+            options=["Slow-Mo (0.18s)", "Normal (0.08s)", "Fast (0.03s)"],
+            value="Normal (0.08s)",
+            key="rover_playback_speed",
+        )
+    speed_delay_map = {
+        "Fast (0.03s)": 0.03,
+        "Normal (0.08s)": 0.08,
+        "Slow-Mo (0.18s)": 0.18,
+    }
+    playback_delay = speed_delay_map.get(speed_choice, 0.08)
+
     # ---------------- SINGLE MODEL MISSION ----------------
     if nav_mode == "Single Model Mission":
-        if launch_rover:
+        do_calc = launch_rover or launch_main or play_anim
+        if do_calc:
             sim_result = simulate_rover_path(
                 model=model,
                 start_pos=start_pos,
@@ -3596,13 +3627,91 @@ def render_neural_pathfinding_tab():
                 status_delta = "Timed Out"
                 status_delta_color = "inverse"
 
-            # ---------------- Telemetry Dashboard ----------------
-            m_stat, m_steps, m_dist, m_haz, m_inf = st.columns(5)
-            m_stat.metric("Mission Status", status_text, delta=status_delta, delta_color=status_delta_color)
-            m_steps.metric("Steps Taken", f"{steps_taken} / {max_steps}")
-            m_dist.metric("Path Distance", f"{path_len:.2f}")
-            m_haz.metric("Max Hazard", f"{max_hazard * 100:.1f}%", delta="Safe" if max_hazard <= 0.55 else "Breached", delta_color="normal" if max_hazard <= 0.55 else "inverse")
-            m_inf.metric("Forward Inferences", f"{total_inferences}")
+            # Create dynamic animation containers
+            telemetry_placeholder = st.empty()
+            chart_placeholder = st.empty()
+
+            if play_anim:
+                total_steps = len(trajectory) - 1
+                for s_idx in range(len(trajectory)):
+                    cur_p = trajectory[s_idx]
+                    cur_d = float(np.linalg.norm(np.array(cur_p) - np.array(target_pos)))
+                    cur_h = hazard_history[s_idx] if s_idx < len(hazard_history) else 0.0
+                    cur_inf = s_idx * num_rays + s_idx
+
+                    if s_idx == total_steps:
+                        s_text = status_text
+                        s_delta = status_delta
+                        s_color = status_delta_color
+                    else:
+                        s_text = "Navigating..."
+                        s_delta = f"Step {s_idx}/{total_steps}"
+                        s_color = "normal"
+
+                    with telemetry_placeholder.container():
+                        m1, m2, m3, m4, m5 = st.columns(5)
+                        m1.metric("Mission Status", s_text, delta=s_delta, delta_color=s_color)
+                        m2.metric("Steps Taken", f"{s_idx} / {max_steps}")
+                        m3.metric("Distance to Target", f"{cur_d:.2f}")
+                        m4.metric("Instant Hazard", f"{cur_h * 100:.1f}%", delta="Safe" if cur_h <= 0.50 else "Hazard Warning", delta_color="normal" if cur_h <= 0.50 else "inverse")
+                        m5.metric("Forward Passes", f"{cur_inf}")
+
+                    with chart_placeholder.container():
+                        col_c, col_d = st.columns([3, 2])
+                        with col_c:
+                            if HAS_PLOTLY:
+                                fig_live = plot_plotly_rover_path(
+                                    model=model,
+                                    X=X,
+                                    y=y,
+                                    trajectory=trajectory,
+                                    ray_history=ray_history,
+                                    start_pos=start_pos,
+                                    target_pos=target_pos,
+                                    show_rays=show_sensor_rays,
+                                    step_index=s_idx,
+                                    title=f"Live Mission: {dataset_name} ({arch_str}) - Step {s_idx}/{total_steps}",
+                                )
+                                st.plotly_chart(
+                                    fig_live,
+                                    config={"displayModeBar": False, "scrollZoom": False},
+                                    width="stretch",
+                                )
+                            else:
+                                fig_mpl = plot_rover_path_mpl(model, X, y, trajectory[:s_idx+1], start_pos, target_pos)
+                                st.pyplot(fig_mpl)
+                                plt.close(fig_mpl)
+                        with col_d:
+                            st.subheader("Live Mission Telemetry")
+                            st.markdown(
+                                f"""
+                                <div style="background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%); border: 1px solid #334155; border-radius: 10px; padding: 1rem; color: white;">
+                                    <div style="font-size: 0.8rem; text-transform: uppercase; color: #94A3B8; letter-spacing: 0.5px;">Active Step: {s_idx} / {total_steps}</div>
+                                    <div style="font-size: 1.15rem; font-weight: 700; color: #38BDF8; margin: 0.2rem 0;">Current Pos: ({cur_p[0]:.2f}, {cur_p[1]:.2f})</div>
+                                    <div style="font-size: 0.85rem; color: #CBD5E1;">
+                                        Distance to Goal: <code>{cur_d:.2f}</code> | Instant Hazard: <code>{cur_h*100:.1f}%</code>
+                                    </div>
+                                </div>
+                                """,
+                                unsafe_allow_html=True,
+                            )
+                            st.markdown("<div style='margin-top: 1rem;'></div>", unsafe_allow_html=True)
+                            st.markdown("#### Real-time Sensory Radar Sweep")
+                            if s_idx < len(ray_history):
+                                ray_vals = [round(r["hazard"], 2) for r in ray_history[s_idx]]
+                                st.caption(f"Radar Beams Hazard: {ray_vals}")
+                                st.progress(min(1.0, max(0.0, cur_h)))
+
+                    time.sleep(playback_delay)
+
+            # Static / Post-Animation interactive state
+            with telemetry_placeholder.container():
+                m_stat, m_steps, m_dist, m_haz, m_inf = st.columns(5)
+                m_stat.metric("Mission Status", status_text, delta=status_delta, delta_color=status_delta_color)
+                m_steps.metric("Steps Taken", f"{steps_taken} / {max_steps}")
+                m_dist.metric("Path Distance", f"{path_len:.2f}")
+                m_haz.metric("Max Hazard", f"{max_hazard * 100:.1f}%", delta="Safe" if max_hazard <= 0.55 else "Breached", delta_color="normal" if max_hazard <= 0.55 else "inverse")
+                m_inf.metric("Forward Inferences", f"{total_inferences}")
 
             # Interactive Step Playback Scrubber
             step_idx = st.slider(
@@ -3631,67 +3740,68 @@ def render_neural_pathfinding_tab():
                     st.caption("Tip: Click anywhere on the contour map to instantly relocate the selected waypoint.")
 
             # Visual Simulation Plot & Diagnostics
-            col_chart, col_details = st.columns([3, 2])
-            with col_chart:
-                if HAS_PLOTLY:
-                    fig_rover = plot_plotly_rover_path(
-                        model=model,
-                        X=X,
-                        y=y,
-                        trajectory=trajectory,
-                        ray_history=ray_history,
-                        start_pos=start_pos,
-                        target_pos=target_pos,
-                        show_rays=show_sensor_rays,
-                        step_index=step_idx,
-                        title=f"Rover Mission on {dataset_name} ({arch_str}) - Step {step_idx}/{len(trajectory)-1}",
-                    )
-                    st.plotly_chart(
-                        fig_rover,
-                        on_select="rerun",
-                        selection_mode=["points"],
-                        key="rover_plotly_map",
-                        config={"displayModeBar": False, "scrollZoom": False},
-                        width="stretch",
-                    )
-                else:
-                    fig_rover_mpl = plot_rover_path_mpl(model, X, y, trajectory[:step_idx+1], start_pos, target_pos)
-                    st.pyplot(fig_rover_mpl)
-                    plt.close(fig_rover_mpl)
+            with chart_placeholder.container():
+                col_chart, col_details = st.columns([3, 2])
+                with col_chart:
+                    if HAS_PLOTLY:
+                        fig_rover = plot_plotly_rover_path(
+                            model=model,
+                            X=X,
+                            y=y,
+                            trajectory=trajectory,
+                            ray_history=ray_history,
+                            start_pos=start_pos,
+                            target_pos=target_pos,
+                            show_rays=show_sensor_rays,
+                            step_index=step_idx,
+                            title=f"Rover Mission on {dataset_name} ({arch_str}) - Step {step_idx}/{len(trajectory)-1}",
+                        )
+                        st.plotly_chart(
+                            fig_rover,
+                            on_select="rerun",
+                            selection_mode=["points"],
+                            key="rover_plotly_map",
+                            config={"displayModeBar": False, "scrollZoom": False},
+                            width="stretch",
+                        )
+                    else:
+                        fig_rover_mpl = plot_rover_path_mpl(model, X, y, trajectory[:step_idx+1], start_pos, target_pos)
+                        st.pyplot(fig_rover_mpl)
+                        plt.close(fig_rover_mpl)
 
-            with col_details:
-                st.subheader("Rover Mission Diagnostics")
-                st.markdown(
-                    f"""
-                    <div style="background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%); border: 1px solid #334155; border-radius: 10px; padding: 1rem; color: white;">
-                        <div style="font-size: 0.8rem; text-transform: uppercase; color: #94A3B8; letter-spacing: 0.5px;">Active Potential Field Model</div>
-                        <div style="font-size: 1.15rem; font-weight: 700; color: #38BDF8; margin: 0.2rem 0;">{arch_str} on {dataset_name}</div>
-                        <div style="font-size: 0.85rem; color: #CBD5E1;">
-                            Start: <code>({start_pos[0]:.2f}, {start_pos[1]:.2f})</code> &rarr; Target: <code>({target_pos[0]:.2f}, {target_pos[1]:.2f})</code>
+                with col_details:
+                    st.subheader("Rover Mission Diagnostics")
+                    st.markdown(
+                        f"""
+                        <div style="background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%); border: 1px solid #334155; border-radius: 10px; padding: 1rem; color: white;">
+                            <div style="font-size: 0.8rem; text-transform: uppercase; color: #94A3B8; letter-spacing: 0.5px;">Active Potential Field Model</div>
+                            <div style="font-size: 1.15rem; font-weight: 700; color: #38BDF8; margin: 0.2rem 0;">{arch_str} on {dataset_name}</div>
+                            <div style="font-size: 0.85rem; color: #CBD5E1;">
+                                Start: <code>({start_pos[0]:.2f}, {start_pos[1]:.2f})</code> &rarr; Target: <code>({target_pos[0]:.2f}, {target_pos[1]:.2f})</code>
+                            </div>
                         </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+                        """,
+                        unsafe_allow_html=True,
+                    )
 
-                st.markdown("<div style='margin-top: 1rem;'></div>", unsafe_allow_html=True)
-                st.markdown("#### Sensor Radar Ray Legend")
-                st.markdown(
-                    """
-                    - <span style="color:#10B981; font-weight:bold;">Green Rays</span>: $P(\\text{Class } 1) < 0.25$ (Clear path)
-                    - <span style="color:#FBBF24; font-weight:bold;">Yellow Rays</span>: $0.25 \\le P(\\text{Class } 1) \\le 0.55$ (Obstacle warning)
-                    - <span style="color:#EF4444; font-weight:bold;">Red Rays</span>: $P(\\text{Class } 1) > 0.55$ (Obstacle breach)
-                    """,
-                    unsafe_allow_html=True,
-                )
+                    st.markdown("<div style='margin-top: 1rem;'></div>", unsafe_allow_html=True)
+                    st.markdown("#### Sensor Radar Ray Legend")
+                    st.markdown(
+                        """
+                        - <span style="color:#10B981; font-weight:bold;">Green Rays</span>: $P(\\text{Class } 1) < 0.25$ (Clear path)
+                        - <span style="color:#FBBF24; font-weight:bold;">Yellow Rays</span>: $0.25 \\le P(\\text{Class } 1) \\le 0.55$ (Obstacle warning)
+                        - <span style="color:#EF4444; font-weight:bold;">Red Rays</span>: $P(\\text{Class } 1) > 0.55$ (Obstacle breach)
+                        """,
+                        unsafe_allow_html=True,
+                    )
 
-                st.caption("How Neural Potential Field Navigation Works:")
-                st.markdown(
-                    "1. **Attractive Force ($v_{\\text{goal}}$):** Pulls the rover directly toward target destination coordinates.\n"
-                    "2. **Sensory Ray-Casting:** Casts forward sensor probes querying the neural network under `no_grad()`.\n"
-                    "3. **Repulsive Force ($v_{\\text{avoid}}$):** Repels the rover away from high-hazard obstacle terrain.\n"
-                    "4. **Tangential Steering ($v_{\\text{tangent}}$):** Slides along obstacle contours to escape local minima."
-                )
+                    st.caption("How Neural Potential Field Navigation Works:")
+                    st.markdown(
+                        "1. **Attractive Force ($v_{\\text{goal}}$):** Pulls the rover along the intelligent Neural Geodesic Flow Field.\n"
+                        "2. **Sensory Ray-Casting:** Casts forward sensor radar sweeps querying the neural network under `no_grad()`.\n"
+                        "3. **Repulsive Force ($v_{\\text{avoid}}$):** Repels the rover away from high-hazard obstacle terrain.\n"
+                        "4. **Momentum Smoothing:** Smooths velocity vectors to prevent jitter around corridor corners."
+                    )
 
             # Step-by-Step Telemetry Table
             with st.expander("Step-by-Step Rover Trajectory & Sensor Telemetry", expanded=False):
@@ -3710,7 +3820,7 @@ def render_neural_pathfinding_tab():
 
         else:
             # Standby state before "Launch Rover Simulation" is clicked
-            st.info("Mission Waypoints Positioned: Start (S) and Target (T) are set on the field. Click '**Launch Rover Simulation**' in the sidebar to simulate autonomous navigation.")
+            st.info("Mission Waypoints Positioned: Start (S) and Target (T) are set on the field. Click '**Launch Full Mission**' or '**Play Animation**' to simulate autonomous navigation.")
 
             # Placement Mode Selector & Waypoint Click Helper (Standby)
             col_click_mode_sb, col_click_info_sb = st.columns([1, 1])
@@ -3762,9 +3872,8 @@ def render_neural_pathfinding_tab():
                     <div style="background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%); border: 1px solid #334155; border-radius: 10px; padding: 1rem; color: white;">
                         <div style="font-size: 0.8rem; text-transform: uppercase; color: #94A3B8; letter-spacing: 0.5px;">Active Potential Field Model</div>
                         <div style="font-size: 1.15rem; font-weight: 700; color: #38BDF8; margin: 0.2rem 0;">{arch_str} on {dataset_name}</div>
-                        <div style="font-size: 0.85rem; color: #CBD5E1; margin-top: 0.5rem;">
-                            Start (S): <code>({start_pos[0]:.2f}, {start_pos[1]:.2f})</code> &bull; Hazard: {start_haz*100:.1f}%<br>
-                            Target (T): <code>({target_pos[0]:.2f}, {target_pos[1]:.2f})</code> &bull; Hazard: {target_haz*100:.1f}%
+                        <div style="font-size: 0.85rem; color: #CBD5E1;">
+                            Start: <code>({start_pos[0]:.2f}, {start_pos[1]:.2f})</code> &rarr; Target: <code>({target_pos[0]:.2f}, {target_pos[1]:.2f})</code>
                         </div>
                     </div>
                     """,
@@ -3776,7 +3885,7 @@ def render_neural_pathfinding_tab():
                     #### Ready for Launch
                     - Adjust Start / Target positions via the sidebar sliders or presets.
                     - Use **Auto-Detect Route** to automatically position waypoints in verified open free space ($P < 0.20$).
-                    - Click the primary **"Launch Rover Simulation"** button to start the pathfinding engine.
+                    - Click **"Play Animation"** to watch real-time step-by-step neural navigation.
                     """
                 )
 
@@ -3794,7 +3903,8 @@ def render_neural_pathfinding_tab():
         params_b = saved_comp.get("params_b", 0)
 
         # Execute dual simulation
-        if launch_rover:
+        do_dual = launch_main or play_anim
+        if do_dual:
             sim_a = simulate_rover_path(
                 model=model_a,
                 start_pos=start_pos,
@@ -3840,6 +3950,46 @@ def render_neural_pathfinding_tab():
 
             # Shared Scrubber
             max_race_steps = max(len(traj_a), len(traj_b)) - 1
+            dual_chart_placeholder = st.empty()
+
+            if play_anim:
+                for r_idx in range(max_race_steps + 1):
+                    with dual_chart_placeholder.container():
+                        col_a, col_b = st.columns(2)
+                        with col_a:
+                            st.subheader(f"Model A: {arch_a}")
+                            if HAS_PLOTLY:
+                                fig_a_live = plot_plotly_rover_path(
+                                    model=model_a,
+                                    X=X,
+                                    y=y,
+                                    trajectory=traj_a,
+                                    ray_history=sim_a["ray_history"],
+                                    start_pos=start_pos,
+                                    target_pos=target_pos,
+                                    show_rays=show_sensor_rays,
+                                    step_index=min(r_idx, len(traj_a) - 1),
+                                    title=f"Model A ({arch_a}) - Step {min(r_idx, len(traj_a)-1)}/{len(traj_a)-1}",
+                                )
+                                st.plotly_chart(fig_a_live, config={"displayModeBar": False, "scrollZoom": False}, width="stretch")
+                        with col_b:
+                            st.subheader(f"Model B: {arch_b}")
+                            if HAS_PLOTLY:
+                                fig_b_live = plot_plotly_rover_path(
+                                    model=model_b,
+                                    X=X,
+                                    y=y,
+                                    trajectory=traj_b,
+                                    ray_history=sim_b["ray_history"],
+                                    start_pos=start_pos,
+                                    target_pos=target_pos,
+                                    show_rays=show_sensor_rays,
+                                    step_index=min(r_idx, len(traj_b) - 1),
+                                    title=f"Model B ({arch_b}) - Step {min(r_idx, len(traj_b)-1)}/{len(traj_b)-1}",
+                                )
+                                st.plotly_chart(fig_b_live, config={"displayModeBar": False, "scrollZoom": False}, width="stretch")
+                    time.sleep(playback_delay)
+
             race_step = st.slider(
                 "Synchronized Race Step Playback (Scrubber)",
                 min_value=0,
@@ -3849,60 +3999,61 @@ def render_neural_pathfinding_tab():
                 help="Scrub through both rovers simultaneously to observe decision boundary navigation side by side.",
             )
 
-            col_a, col_b = st.columns(2)
-            with col_a:
-                st.subheader(f"Model A: {arch_a}")
-                st.caption(f"Parameters: {params_a:,} | Outcome: {'Goal Reached' if sim_a['success'] else 'Failed'} | Collisions: {sim_a['collisions']}")
-                if HAS_PLOTLY:
-                    fig_a = plot_plotly_rover_path(
-                        model=model_a,
-                        X=X,
-                        y=y,
-                        trajectory=traj_a,
-                        ray_history=sim_a["ray_history"],
-                        start_pos=start_pos,
-                        target_pos=target_pos,
-                        show_rays=show_sensor_rays,
-                        step_index=min(race_step, len(traj_a) - 1),
-                        title=f"Model A ({arch_a}) Potential Field",
-                    )
-                    st.plotly_chart(
-                        fig_a,
-                        key="plotly_rover_a",
-                        config={"displayModeBar": False, "scrollZoom": False},
-                        width="stretch",
-                    )
-                else:
-                    fig_a_mpl = plot_rover_path_mpl(model_a, X, y, traj_a[:min(race_step, len(traj_a)-1)+1], start_pos, target_pos)
-                    st.pyplot(fig_a_mpl)
-                    plt.close(fig_a_mpl)
+            with dual_chart_placeholder.container():
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    st.subheader(f"Model A: {arch_a}")
+                    st.caption(f"Parameters: {params_a:,} | Outcome: {'Goal Reached' if sim_a['success'] else 'Failed'} | Collisions: {sim_a['collisions']}")
+                    if HAS_PLOTLY:
+                        fig_a = plot_plotly_rover_path(
+                            model=model_a,
+                            X=X,
+                            y=y,
+                            trajectory=traj_a,
+                            ray_history=sim_a["ray_history"],
+                            start_pos=start_pos,
+                            target_pos=target_pos,
+                            show_rays=show_sensor_rays,
+                            step_index=min(race_step, len(traj_a) - 1),
+                            title=f"Model A ({arch_a}) Potential Field",
+                        )
+                        st.plotly_chart(
+                            fig_a,
+                            key="plotly_rover_a",
+                            config={"displayModeBar": False, "scrollZoom": False},
+                            width="stretch",
+                        )
+                    else:
+                        fig_a_mpl = plot_rover_path_mpl(model_a, X, y, traj_a[:min(race_step, len(traj_a)-1)+1], start_pos, target_pos)
+                        st.pyplot(fig_a_mpl)
+                        plt.close(fig_a_mpl)
 
-            with col_b:
-                st.subheader(f"Model B: {arch_b}")
-                st.caption(f"Parameters: {params_b:,} | Outcome: {'Goal Reached' if sim_b['success'] else 'Failed'} | Collisions: {sim_b['collisions']}")
-                if HAS_PLOTLY:
-                    fig_b = plot_plotly_rover_path(
-                        model=model_b,
-                        X=X,
-                        y=y,
-                        trajectory=traj_b,
-                        ray_history=sim_b["ray_history"],
-                        start_pos=start_pos,
-                        target_pos=target_pos,
-                        show_rays=show_sensor_rays,
-                        step_index=min(race_step, len(traj_b) - 1),
-                        title=f"Model B ({arch_b}) Potential Field",
-                    )
-                    st.plotly_chart(
-                        fig_b,
-                        key="plotly_rover_b",
-                        config={"displayModeBar": False, "scrollZoom": False},
-                        width="stretch",
-                    )
-                else:
-                    fig_b_mpl = plot_rover_path_mpl(model_b, X, y, traj_b[:min(race_step, len(traj_b)-1)+1], start_pos, target_pos)
-                    st.pyplot(fig_b_mpl)
-                    plt.close(fig_b_mpl)
+                with col_b:
+                    st.subheader(f"Model B: {arch_b}")
+                    st.caption(f"Parameters: {params_b:,} | Outcome: {'Goal Reached' if sim_b['success'] else 'Failed'} | Collisions: {sim_b['collisions']}")
+                    if HAS_PLOTLY:
+                        fig_b = plot_plotly_rover_path(
+                            model=model_b,
+                            X=X,
+                            y=y,
+                            trajectory=traj_b,
+                            ray_history=sim_b["ray_history"],
+                            start_pos=start_pos,
+                            target_pos=target_pos,
+                            show_rays=show_sensor_rays,
+                            step_index=min(race_step, len(traj_b) - 1),
+                            title=f"Model B ({arch_b}) Potential Field",
+                        )
+                        st.plotly_chart(
+                            fig_b,
+                            key="plotly_rover_b",
+                            config={"displayModeBar": False, "scrollZoom": False},
+                            width="stretch",
+                        )
+                    else:
+                        fig_b_mpl = plot_rover_path_mpl(model_b, X, y, traj_b[:min(race_step, len(traj_b)-1)+1], start_pos, target_pos)
+                        st.pyplot(fig_b_mpl)
+                        plt.close(fig_b_mpl)
 
             # Comparative Race Telemetry Summary
             st.markdown("<div style='margin-top: 1.25rem;'></div>", unsafe_allow_html=True)
@@ -3920,7 +4071,7 @@ def render_neural_pathfinding_tab():
             ]
             st.dataframe(race_table, width="stretch", hide_index=True)
         else:
-            st.info("Race Waypoints Configured: Start (S) and Target (T) are set on the field. Click '**Start Dual-Model Race**' in the sidebar to benchmark both models.")
+            st.info("Race Waypoints Configured: Start (S) and Target (T) are set on the field. Click '**Start Dual-Model Race**' or '**Play Race Animation**' to benchmark both models.")
             col_a, col_b = st.columns(2)
             with col_a:
                 st.subheader(f"Model A: {arch_a}")
