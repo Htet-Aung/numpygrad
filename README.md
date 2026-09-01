@@ -1,30 +1,24 @@
-# NumPyGrad: Pure NumPy Autograd & Deep Learning Engine
+# NumPyGrad: Pure NumPy Autograd & Deep Learning Framework
 
-[![Release](https://img.shields.io/badge/Release-v1.0.0-blue.svg)](https://github.com/Htet-Aung/numpygrad)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![Dependencies: Pure NumPy](https://img.shields.io/badge/Dependencies-Pure%20NumPy-brightgreen.svg)](#)
+[![Tests: 129/129 Passed](https://img.shields.io/badge/Tests-129%2F129%20Passed-success.svg)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![Dependencies](https://img.shields.io/badge/Dependencies-Pure%20NumPy-brightgreen.svg)](#)
-[![Tests: 143/143 Passed](https://img.shields.io/badge/Tests-143%2F143%20Passed-success.svg)](#)
+[![Release: v1.0.0](https://img.shields.io/badge/Release-v1.0.0-blue.svg)](https://github.com/Htet-Aung/numpygrad)
 
-A transparent, educational deep learning library and dynamic tensor automatic differentiation engine built from scratch using **pure Python and NumPy**—with **zero external deep learning framework dependencies** (no PyTorch, JAX, TensorFlow, or Keras).
+**NumPyGrad** is an educational deep learning and reverse-mode automatic differentiation framework written completely from scratch in **pure Python and NumPy**, with **zero external deep learning framework dependencies** (no PyTorch, JAX, TensorFlow, or compiled C++ extensions).
 
----
+Designed for mathematical clarity and architectural transparency, NumPyGrad demystifies how modern autograd engines and deep neural networks operate under the hood—from dynamic computation graph construction, topological sorting, and broadcasting-aware gradient reduction to vectorized 2D convolutions, spatial pooling, and adaptive optimizers.
 
-## Purpose & Philosophy
-
-NumPyGrad was created as a bottom-up exploration into the mathematical and architectural foundations of modern deep learning frameworks. By building an autograd engine and neural network abstractions with only Python and standard NumPy arrays, every matrix operation, gradient accumulation hook, and graph traversal step remains completely visible and debuggable.
-
-### Non-Goals
-To maintain simplicity and educational clarity, NumPyGrad deliberately avoids:
-- **GPU / CUDA acceleration:** Execution is strictly CPU-bound to prioritize clean, readable NumPy code over hardware-specific CUDA kernels.
-- **Distributed training:** Designed for single-machine execution, rapid experimentation, and conceptual clarity.
-- **Production framework replacement:** NumPyGrad is a learning artifact and portfolio project, not a competitor to industrial engines like PyTorch or JAX.
+The framework features two flagship interactive showcase applications within the built-in Streamlit Studio:
+1. **2D Decision Boundary Explorer:** Real-time neural network training on non-linear synthetic manifolds (Two Moons, Circles, Spirals), interactive gold-star click-to-predict inference, side-by-side model capacity comparisons, and step-by-step computation trace inspection.
+2. **Live Handwritten Digit Recognition Canvas:** Real-time MNIST drawing canvas with brush width controls, connected-component segmentation for multi-digit sequences, and live Plotly class probability distributions.
 
 ---
 
 ## Visual Showcase: Non-Linear Decision Boundary
 
-NumPyGrad trains multi-layer perceptrons to resolve complex non-linear classification manifolds (e.g. Two Moons, Concentric Circles, Spirals) via topological reverse-mode backpropagation and AdamW optimization:
+NumPyGrad trains multi-layer perceptrons to resolve complex non-linear classification manifolds through topological reverse-mode backpropagation and AdamW optimization:
 
 <p align="center">
   <img src="examples/decision_boundary.png" alt="NumPyGrad Decision Boundary & Convergence Curves" width="850"/>
@@ -32,17 +26,50 @@ NumPyGrad trains multi-layer perceptrons to resolve complex non-linear classific
 
 ---
 
-## Key Features
+## Comprehensive Feature Breakdown
 
-- **Dynamic Computational DAG:** Reverse-mode automatic differentiation over dynamically constructed Directed Acyclic Graphs with depth-first topological traversal.
-- **PyTorch-Style Modular Architecture:** `Module`, `Parameter`, `Linear`, `Conv2D`, `MaxPool2D`, `BatchNorm1d`, `Dropout`, `Flatten`, `Sequential`, and non-linear activations (`ReLU`, `Tanh`, `Sigmoid`, `GELU`).
-- **Vectorized Spatial Convolutions:** 2D convolution and max pooling utilizing `im2col` matrix unfolding and analytical `col2im` gradient projection in pure NumPy.
-- **Dataset & DataLoader Pipeline:** Clean data loading with multi-tensor datasets, mini-batch slicing, deterministic shuffling, and remainder batch policies.
-- **Execution Modes & Autograd Guards:** Recursive `model.train()` and `model.eval()` mode propagation, plus `no_grad()` context managers and decorators.
-- **Model Inspection & Diagnostics:** `model.summary(input_shape)` generating ASCII reports with layer output shapes, parameter counts, and memory footprint estimations.
-- **Single-File Model Persistence:** Native `.ng` container serialization (`save_model` / `load_model` / `model.save()`) packaging architecture topology and compressed weights.
-- **Interactive Streamlit Studio:** Multi-tab visualizer with real-time 2D decision boundary training, live coordinate inference with boundary marker overlay, expandable computation trace drawer, side-by-side **Model Capacity Comparison (A vs B)** laboratory, and interactive MNIST handwritten digit drawing canvas.
-- **Mathematical Rigor:** 100% test coverage with centered finite-difference numerical gradient checks (`gradcheck` relative error $< 10^{-10}$).
+### 1. Autograd Core & Calculus Engine
+- **Dynamic Reverse-Mode DAG:** Constructs computation graphs on the fly where each differentiable operation dynamically tracks predecessor nodes (`_prev`) and local Jacobian-vector product closures (`_backward`).
+- **Topological Backpropagation:** Evaluates gradients via depth-first topological traversal, guaranteeing that parent dependencies are resolved before propagating upstream gradients and correctly accumulating multi-branch gradients (`grad += ...`).
+- **Broadcasting Reduction Calculus (`_unbroadcast`):** Handles NumPy broadcasting across operands of differing shapes (e.g. `(N, D) + (D,)`), projecting accumulated gradients back to original input shapes by summing out broadcasted leading and singleton axes.
+- **Extensive Differentiable Tensor Operations:**
+  - *Arithmetic & Algebra:* `+`, `-`, `*`, `/`, `@` (matrix multiplication), `**` (power), `-` (unary negation), and tensor slicing (`__getitem__`).
+  - *Shape Transformations:* `reshape`, `transpose`, `T`, `squeeze`, `unsqueeze`, and `concat` (`cat`).
+  - *Reductions:* `sum`, `mean` along specified axes or across all dimensions.
+- **Autograd Execution Guards:** `no_grad()`, `enable_grad()`, `is_grad_enabled()`, and `set_grad_enabled()` for disabling graph retention during inference.
+
+### 2. Layers, Vision & Activations
+- **PyTorch-Style Modular Hierarchy:** Base `Module` and `Parameter` abstractions with recursive parameter registration, `state_dict()`, `load_state_dict()`, and mode switching (`train()` / `eval()`).
+- **Vectorized Spatial Convolutions (`Conv2D`):** Implements 2D spatial convolutions using `im2col` matrix unfolding and analytical `col2im` gradient scattering in pure NumPy, avoiding slow nested loops.
+- **Spatial Max Pooling (`MaxPool2D`):** Spatial downsampling with spatial argmax gradient routing during backpropagation.
+- **Normalization & Regularization:**
+  - `BatchNorm1d`: Exponential moving average running statistics during training and fixed running statistics during evaluation.
+  - `Dropout`: Inverted dropout scaling (`1 / (1 - p)`) during training and identity pass during evaluation.
+  - `Flatten`: Unrolls multi-dimensional spatial tensor activations to `(N, -1)`.
+- **Containers & Activations:**
+  - `Sequential`: Cascaded linear container for modular model assembly.
+  - Non-linear activations: `ReLU`, `Sigmoid` (numerically stable), `Tanh`, and `GELU`.
+
+### 3. Losses & First-Order Optimizers
+- **Loss Criteria:**
+  - `CrossEntropyLoss`: Numerically stable categorical cross-entropy combining LogSoftmax and NLLLoss via the Log-Sum-Exp trick to eliminate floating-point overflow and underflow.
+  - `MSELoss`: Mean squared error criterion for regression.
+  - `BCEWithLogitsLoss`: Binary cross-entropy with integrated sigmoid activation.
+- **Optimizers:**
+  - `SGD`: Stochastic gradient descent with Polyak momentum velocity buffers and L2 weight decay.
+  - `AdamW`: Adaptive moment estimation with first and second moment bias correction and decoupled weight decay.
+
+### 4. Single-File Persistence (`.ng` Format)
+- Robust, uncorruptible container serialization storing both network architecture and parameter weights in a single `.ng` archive:
+  - `architecture.json`: Complete layer hierarchy, types, hyperparameters, and topology layout.
+  - `weights.npz`: Compressed parameter tensors and non-trainable buffers.
+- Unified API: `model.save("model.ng")`, `save_model(model, filepath)`, and `load_model(filepath)`.
+
+### 5. Diagnostics & Numerical Verification
+- **Model Inspection (`model.summary`):** Formatted ASCII reports detailing layer-by-layer output shapes, trainable parameter counts, non-trainable buffers, and estimated memory footprints.
+- **Centered Finite-Difference Verification (`gradcheck`):** Validates analytical gradients against two-sided numerical approximations:
+  $$\frac{\partial f}{\partial x_i} \approx \frac{f(x + \epsilon e_i) - f(x - \epsilon e_i)}{2\epsilon}$$
+  Strictly verified to maintain relative error tolerances $< 10^{-5}$.
 
 ---
 
@@ -56,49 +83,49 @@ cd numpygrad
 pip install -e .
 ```
 
-To include optional dependencies for the interactive Streamlit studio:
+To include optional dependencies for the interactive Streamlit Studio:
+
 ```bash
 pip install -e ".[app]"
 ```
 
 ---
 
-## Quickstart
+## Quickstart & Usage Examples
 
-Build, inspect, train, evaluate, and persist a deep neural network in under 40 lines of pure Python:
+Build, inspect, train, evaluate, and persist a convolutional neural network in under 40 lines of pure Python:
 
 ```python
 import numpy as np
 import numpygrad as ng
 import numpygrad.nn as nn
 import numpygrad.optim as optim
-from numpygrad.core.tensor import Tensor, no_grad
+from numpygrad import Tensor, no_grad, load_model
 from numpygrad.data import TensorDataset, DataLoader
 
-# 1. Define Model Architecture
+# 1. Build a Convolutional Neural Network with Sequential
 model = nn.Sequential(
-    nn.Flatten(),
-    nn.Linear(in_features=28 * 28, out_features=128),
-    nn.BatchNorm1d(num_features=128),
+    nn.Conv2D(in_channels=1, out_channels=8, kernel_size=3, padding=1),
     nn.ReLU(),
-    nn.Dropout(p=0.2),
-    nn.Linear(in_features=128, out_features=10)
+    nn.MaxPool2D(kernel_size=2, stride=2),
+    nn.Flatten(),
+    nn.Linear(in_features=8 * 14 * 14, out_features=10)
 )
 
-# 2. Inspect Model Topology & Memory Footprint
+# 2. Inspect Model Topology & Parameters
 model.summary(input_shape=(1, 28, 28))
 
 # 3. Setup Loss Criterion, Optimizer, and DataLoader
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
 
-X_data = np.random.randn(256, 28, 28).astype(np.float32)
-y_data = np.random.randint(0, 10, size=(256,))
+X_data = np.random.randn(128, 1, 28, 28).astype(np.float32)
+y_data = np.random.randint(0, 10, size=(128,))
 
 dataset = TensorDataset(X_data, y_data)
 loader = DataLoader(dataset, batch_size=32, shuffle=True)
 
-# 4. Training Loop
+# 4. Standard Training Loop
 model.train()
 for epoch in range(3):
     for batch_x, batch_y in loader:
@@ -109,147 +136,126 @@ for epoch in range(3):
         optimizer.step()
     print(f"Epoch {epoch + 1} | Loss: {loss.data:.4f}")
 
-# 5. Evaluation & Inference under no_grad
+# 5. Evaluation & Inference under no_grad()
 model.eval()
 with no_grad():
     sample = Tensor(X_data[:5])
-    preds = np.argmax(model(sample).data, axis=-1)
-    print(f"Inference Predictions: {preds}")
+    predictions = np.argmax(model(sample).data, axis=-1)
+    print(f"Inference Predictions: {predictions}")
 
-# 6. Save & Reload Model Artifact
-model.save("my_model.ng")
-loaded_model = ng.load_model("my_model.ng")
+# 6. Save and Reload .ng Container Artifact
+model.save("conv_model.ng")
+reloaded_model = load_model("conv_model.ng")
 ```
 
 ---
 
-## Real-World Applications & Examples
+## Interactive Studio (Streamlit Dashboard)
 
-### 1. Flagship MNIST Handwritten Digit Classification
-
-NumPyGrad includes complete end-to-end training pipelines on the canonical 70,000-sample MNIST dataset:
-
-#### Multi-Layer Perceptron (MLP)
-- **Architecture:** `Flatten -> Linear(784, 128) -> ReLU -> Linear(128, 64) -> ReLU -> Linear(64, 10)`
-- **Accuracy:** **97.55% test accuracy** in 5 epochs (~18s on CPU)
-- **Artifact:** Saved to `examples/mnist_mlp.ng`
+Launch the interactive web studio for real-time visualization and tactile experimentation:
 
 ```bash
-python examples/train_mnist_mlp.py
-```
-
-#### Convolutional Neural Network (CNN)
-- **Architecture:** `Conv2D(1->8, 3x3) -> MaxPool(2) -> Conv2D(8->16, 3x3) -> MaxPool(2) -> Flatten -> Linear(784, 64) -> Linear(64, 10)`
-- **Accuracy:** **98.35% test accuracy** with **52.3% fewer parameters** than MLP (52,138 vs. 109,386)
-- **Artifact:** Saved to `examples/mnist_cnn.ng`
-
-```bash
-python examples/train_mnist_cnn.py
-```
-
-| Architecture | Parameters | Parameter Reduction | Test Accuracy | Step Latency (B=128) |
-|---|---|---|---|---|
-| **MLP Baseline** | 109,386 | Baseline | 97.55% | 15.63 ms |
-| **NumPyGrad CNN** | 52,138 | **-52.3%** | **98.35%** | 173.22 ms |
-
----
-
-### 2. Tabular Iris Multi-Class Classification
-
-Trains a compact neural network with `BatchNorm1d` on the standard 150-sample Iris dataset, computing precision classification metrics and integer confusion matrices:
-
-```bash
-python examples/train_iris.py
-```
-- **Test Accuracy:** **96.67%** (29/30 correct test samples)
-- **Confusion Matrix:**
-  ```text
-  [[10  0  0]
-   [ 0  8  1]
-   [ 0  0 11]]
-  ```
-
----
-
-## Interactive Studio (Streamlit Web Dashboard)
-
-NumPyGrad features an interactive multi-mode web studio for visual experimentation and live inference:
-
-```bash
-# Launch via one-click runner (Windows batch / PowerShell)
+# Launch via one-click runner (Windows Batch / PowerShell)
 .\dev.bat
 # or
 .\dev.ps1
 
-# Or standard Streamlit command
+# Or run standard Streamlit CLI
 streamlit run app/app.py
 ```
 
-### Studio Features:
-1. **2D Decision Boundary Studio:**
-   - **Single Model Studio:** Interactive synthetic topology selector (Two Moons, Circles, Spirals) with full-span decision contours, smooth surface rendering, explicit $P=0.5$ decision border, live loss/accuracy convergence curves, "Model Ready" status card, direct **Click-to-Predict** on interactive Plotly decision surfaces (`predict_point` under `no_grad()`) with active gold star marker overlay, and expandable **Engine Internals & Computation Trace** drawer (step-by-step tensor activations, Log-Sum-Exp trick numerical breakdown, parameter diagnostics, and layer-by-layer **Gradient Flow Telemetry** bar chart).
-   - **Model Capacity Comparison (A vs B):** Side-by-side comparative laboratory evaluating two distinct architectures (e.g. Shallow MLP vs Deep MLP, Tanh vs ReLU) on identical mini-batches, comparing decision boundary complexity, parameter counts, synchronized dual click-to-predict telemetry, and comparative gradient flow diagnostics.
-2. **Autonomous Neural Pathfinding & Navigation Race:** Interactive robotics obstacle avoidance simulator where learned classification boundaries act as **dynamic artificial potential fields**. Features dynamic safe waypoint discovery (`find_safe_waypoints` in safe territory $P < 0.20$), forward sensory ray-casting color-coded by hazard severity (Green clear, Yellow warning, Red breach), tangential wall-following steering to eliminate local minima traps, interactive step playback scrubbing, comprehensive telemetry (Mission Status, Distance, Collisions, Max Hazard, Inferences), and a side-by-side **Dual-Model Navigation Race (Model A vs Model B)** demonstrating how network capacity and boundary smoothness govern obstacle navigation success.
-3. **Handwritten Digit Recognition:** Interactive drawing canvas with Brush Width slider, native Undo/Redo/Clear stroke history state management, pure NumPy connected component segmentation for multi-digit recognition (1-digit, 2-digit, or arbitrary sequence), left-to-right inference, position breakdown badges, and interactive Plotly class probability distribution bar charts evaluated from `examples/mnist_mlp.ng`.
+### 1. 2D Decision Boundary Studio & Live Convergence
+Live training on non-linear synthetic manifolds (Two Moons, Circles, Spirals, Corridor Maze) with full-span decision contours, smooth probability surface rendering, real-time loss and accuracy convergence curves, and direct **Click-to-Predict** coordinate inference with active gold star markers.
+
+<p align="center">
+  <img src="examples/studio_decision_boundary.png" alt="NumPyGrad 2D Decision Boundary Studio" width="850"/>
+</p>
+
+### 2. Autonomous Neural Pathfinding & Obstacle Avoidance
+Interactive robotics simulator where learned neural classification boundaries act as **dynamic artificial potential fields**. The rover emits multi-angle sensory rays to detect boundary hazards in real time, steering smoothly around obstacles with tangential wall-following to reach destination targets.
+
+<p align="center">
+  <img src="examples/studio_neural_pathfinding.png" alt="NumPyGrad Autonomous Neural Pathfinding" width="850"/>
+</p>
+
+### 3. Live Handwritten Digit Recognition Canvas
+Interactive drawing canvas with customizable brush width and native stroke history controls (Undo, Redo, Clear). Features pure NumPy connected-component segmentation to recognize multi-digit sequences (e.g. sequence `"67"` with per-digit bounding boxes and position confidence breakdowns) as well as single digits, evaluating real-time inference against pre-trained MNIST models (`examples/mnist_mlp.ng`) with interactive Plotly probability distributions.
+
+<p align="center">
+  <img src="examples/studio_mnist_canvas.png" alt="NumPyGrad MNIST Multi-Digit Drawing Canvas" width="850"/>
+</p>
 
 ---
 
-## CPU Micro-Benchmark: NumPy vs. PyTorch C++
+## Reproducing Examples & Benchmarks
 
-To explore how close pure vectorized NumPy operations can come to PyTorch's native C++ CPU backend on standard workloads, a micro-benchmark suite is included:
+NumPyGrad includes standalone reproduction scripts for standard datasets and benchmarks:
 
 ```bash
-python benchmarks/benchmark_cpu.py
+# 1. Train Synthetic 2D Decision Boundaries (Two Moons, Circles, Spirals)
+py -3.13 examples/train_synthetic_2d.py
+
+# 2. Train Multi-Class Iris Tabular Classifier (>96% Accuracy)
+py -3.13 examples/train_iris.py
+
+# 3. Train Flagship MNIST Multi-Layer Perceptron (97.55% Test Accuracy)
+py -3.13 examples/train_mnist_mlp.py
+
+# 4. Train Flagship MNIST Convolutional Neural Network (98.35% Test Accuracy)
+py -3.13 examples/train_mnist_cnn.py
+
+# 5. Run CPU Micro-Benchmark vs. PyTorch C++ Engine
+py -3.13 benchmarks/benchmark_cpu.py
 ```
 
-| Framework | Implementation (3-Layer MLP, B=128) | Step Latency (Fwd + Bwd) | Training Throughput |
+### Benchmark Summary (MNIST Classification)
+
+| Model Architecture | Parameters | Parameter Reduction | Test Accuracy | Step Latency (B=128) |
+|---|---|---|---|---|
+| **MLP Baseline** | 109,386 | Baseline | 97.55% | ~15.6 ms |
+| **NumPyGrad CNN** | 52,138 | **-52.3%** | **98.35%** | ~173.2 ms |
+
+### CPU Throughput: Pure NumPy vs. PyTorch C++ (3-Layer MLP, B=128)
+
+| Engine | Backend | Step Latency (Fwd + Bwd) | Throughput |
 |---|---|---|---|
-| **NumPyGrad** | Pure NumPy / Python CPU | **2.21 ms** | **~58,000 samples/sec** |
-| **PyTorch** | Native C++ CPU (LibTorch) | **1.85 ms** | **~69,000 samples/sec** |
-
-*Note: This benchmark highlights that with careful vectorization and minimal object allocations, Python + NumPy can achieve respectable CPU throughput on moderate batch sizes without compiled C++ extensions.*
+| **NumPyGrad** | Pure Python + NumPy | **2.21 ms** | **~58,000 samples/sec** |
+| **PyTorch** | Native C++ (LibTorch CPU) | **1.85 ms** | **~69,000 samples/sec** |
 
 ---
 
-## Mathematical Core & Architecture
+## Automated Testing & Gradient Verification
 
-NumPyGrad implements clean, mathematically verified calculus primitives:
-
-### 1. Dynamic Topological Backpropagation
-Each operation creates a dynamic node tracking predecessor inputs (`_prev`) and local Jacobian-vector product closure (`_backward`):
-$$\frac{\partial \mathcal{L}}{\partial X} = \sum_{Y \in \text{Children}(X)} \frac{\partial \mathcal{L}}{\partial Y} \frac{\partial Y}{\partial X}$$
-A depth-first topological traversal resolves variable dependencies before propagating upstream gradients, ensuring correct accumulation (`grad += ...`) across multi-branch DAGs.
-
-### 2. Broadcasting Reduction Calculus (`_unbroadcast`)
-When binary operations broadcast operands across differing shapes (e.g. $(N, D) + (D,)$), the backward pass projects accumulated gradients back to the original operand shape by summing over broadcasted leading and singleton axes.
-
-### 3. Log-Sum-Exp Numerical Stability
-Softmax and Cross-Entropy compute the Log-Sum-Exp reduction over logits $z$:
-$$\text{LSE}(z) = \max_j(z_j) + \log\left(\sum_j \exp\left(z_j - \max_k(z_k)\right)\right)$$
-This prevents exponential floating-point overflow and underflow in single-precision float32 arithmetic.
-
-### 4. Vectorized Spatial Convolutions (`im2col` / `col2im`)
-Convolutions unfold spatial image patches into matrix columns via strided views:
-$$Y = W_{\text{flat}} \cdot \text{im2col}(X) + b$$
-Gradients are accumulated via matrix multiplication ($\partial L/\partial W = \partial L/\partial Y \cdot \text{cols}^T$) and scattered back to input coordinates via `col2im`.
-
----
-
-## Running Automated Tests & Gradient Checks
-
-Run the complete test suite with 100% `gradcheck` finite-difference numerical validation:
+Run the complete test suite with 100% passing test coverage:
 
 ```bash
 pytest -v
 ```
 
-Run specific diagnostic checks with the built-in `gradcheck-verifier` skill:
+Or via Python 3.13:
 ```bash
-python .agents/skills/gradcheck-verifier/scripts/verify_grad.py --layer all
+py -3.13 -m pytest -v
 ```
+
+To run standalone numerical finite-difference checks on all layers:
+
+```bash
+py -3.13 .agents/skills/gradcheck-verifier/scripts/verify_grad.py --layer all
+```
+
+---
+
+## Project Philosophy & Non-Goals
+
+NumPyGrad was built to explore the mathematical and architectural mechanics of deep learning systems. Every matrix operation, gradient accumulation hook, and graph traversal step remains plain, readable, and debuggable in Python.
+
+### Non-Goals
+- **No GPU / CUDA Acceleration:** Execution is strictly CPU-bound to prioritize clean, readable NumPy code over hardware-specific CUDA kernels.
+- **No Distributed Scaling:** Built for single-machine conceptual understanding, learning, and rapid experimentation.
+- **Not a Production Framework Replacement:** NumPyGrad is an educational artifact and portfolio project, not a competitor to industrial frameworks like PyTorch or JAX.
 
 ---
 
 ## License
 
-This project is open source and available under the [MIT License](LICENSE).
+This project is open-source software licensed under the [MIT License](LICENSE).
