@@ -1832,6 +1832,209 @@ def plot_plotly_rover_path(
     return fig
 
 
+def render_plotly_rover_player(
+    fig: Any,
+    total_steps: int,
+    initial_step: int = 0,
+    player_id: str = "main",
+    height: int = 610,
+) -> None:
+    """Renders Plotly figure with seamless client-side animation and a unified Play/Pause toggle + Skip -10/+10 controls."""
+    if not HAS_PLOTLY or fig is None:
+        return
+
+    # Clear internal Plotly updatemenus and sliders so only our custom bar is rendered
+    fig.layout.updatemenus = []
+    fig.layout.sliders = []
+    fig.layout.height = 540
+    fig.layout.margin = dict(l=45, r=45, t=105, b=40)
+
+    canvas_id = f"plotly_rover_canvas_{player_id}"
+    fig_html = fig.to_html(include_plotlyjs="cdn", full_html=False, div_id=canvas_id)
+
+    custom_player_html = f"""
+    <style>
+    .rover-player-wrapper {{
+        width: 100%;
+        background: #0F172A;
+        border-radius: 12px;
+        padding: 0 0 8px 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        color: #F8FAFC;
+    }}
+    .rover-controls-bar {{
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: #1E293B;
+        border: 1px solid #334155;
+        border-radius: 8px;
+        padding: 8px 14px;
+        margin: 4px 6px 0 6px;
+    }}
+    .rover-btn {{
+        background: #334155;
+        color: #F8FAFC;
+        border: 1px solid #475569;
+        border-radius: 6px;
+        padding: 6px 14px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        user-select: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }}
+    .rover-btn:hover {{
+        background: #475569;
+        border-color: #64748B;
+    }}
+    .rover-btn:active {{
+        transform: scale(0.97);
+    }}
+    .rover-btn-play {{
+        background: #0284C7;
+        border-color: #38BDF8;
+        color: #FFFFFF;
+        min-width: 90px;
+    }}
+    .rover-btn-play:hover {{
+        background: #0369A1;
+    }}
+    .rover-btn-play.is-playing {{
+        background: #EA580C;
+        border-color: #FB923C;
+    }}
+    .rover-slider {{
+        flex: 1;
+        height: 6px;
+        border-radius: 3px;
+        background: #334155;
+        outline: none;
+        cursor: pointer;
+        accent-color: #38BDF8;
+    }}
+    .rover-badge {{
+        font-size: 12px;
+        font-weight: 600;
+        color: #38BDF8;
+        background: rgba(56, 189, 248, 0.12);
+        padding: 5px 10px;
+        border-radius: 6px;
+        border: 1px solid rgba(56, 189, 248, 0.25);
+        white-space: nowrap;
+        min-width: 110px;
+        text-align: center;
+    }}
+    </style>
+
+    <div class="rover-player-wrapper">
+        {fig_html}
+        <div class="rover-controls-bar">
+            <button id="btn_back10_{player_id}" class="rover-btn" title="Skip 10 steps backward">⏪ -10</button>
+            <button id="btn_play_{player_id}" class="rover-btn rover-btn-play" title="Play / Pause Animation">▶ Play</button>
+            <button id="btn_fwd10_{player_id}" class="rover-btn" title="Skip 10 steps forward">⏩ +10</button>
+            <input type="range" id="slider_{player_id}" class="rover-slider" min="0" max="{total_steps - 1}" value="{initial_step}" step="1">
+            <span id="badge_{player_id}" class="rover-badge">Step: {initial_step} / {total_steps - 1}</span>
+        </div>
+    </div>
+
+    <script>
+    (function() {{
+        var gd = document.getElementById("{canvas_id}");
+        var btnPlay = document.getElementById("btn_play_{player_id}");
+        var btnBack = document.getElementById("btn_back10_{player_id}");
+        var btnFwd = document.getElementById("btn_fwd10_{player_id}");
+        var slider = document.getElementById("slider_{player_id}");
+        var badge = document.getElementById("badge_{player_id}");
+
+        var isPlaying = false;
+        var animTimer = null;
+        var totalSteps = {total_steps};
+        var currentStep = {initial_step};
+        var frameDuration = 50;
+
+        function updateUI(step) {{
+            if (badge) badge.innerText = "Step: " + step + " / " + (totalSteps - 1);
+            if (slider) slider.value = step;
+        }}
+
+        function goToStep(step) {{
+            if (step < 0) step = 0;
+            if (step >= totalSteps) step = totalSteps - 1;
+            currentStep = step;
+            updateUI(currentStep);
+            if (gd && window.Plotly) {{
+                window.Plotly.animate(gd, [String(currentStep)], {{
+                    mode: "immediate",
+                    frame: {{duration: 0, redraw: false}},
+                    transition: {{duration: 0}}
+                }});
+            }}
+        }}
+
+        function pause() {{
+            isPlaying = false;
+            if (animTimer) {{
+                clearInterval(animTimer);
+                animTimer = null;
+            }}
+            if (btnPlay) {{
+                btnPlay.innerText = "▶ Play";
+                btnPlay.classList.remove("is-playing");
+            }}
+        }}
+
+        function play() {{
+            if (currentStep >= totalSteps - 1) {{
+                goToStep(0);
+            }}
+            isPlaying = true;
+            if (btnPlay) {{
+                btnPlay.innerText = "⏸ Pause";
+                btnPlay.classList.add("is-playing");
+            }}
+
+            animTimer = setInterval(function() {{
+                if (currentStep >= totalSteps - 1) {{
+                    pause();
+                    return;
+                }}
+                goToStep(currentStep + 1);
+            }}, frameDuration);
+        }}
+
+        if (btnPlay) {{
+            btnPlay.onclick = function() {{
+                if (isPlaying) pause(); else play();
+            }};
+        }}
+        if (btnBack) {{
+            btnBack.onclick = function() {{
+                pause();
+                goToStep(currentStep - 10);
+            }};
+        }}
+        if (btnFwd) {{
+            btnFwd.onclick = function() {{
+                pause();
+                goToStep(currentStep + 10);
+            }};
+        }}
+        if (slider) {{
+            slider.oninput = function() {{
+                pause();
+                goToStep(parseInt(this.value, 10));
+            }};
+        }}
+    }})();
+    </script>
+    """
+    st.components.v1.html(custom_player_html, height=height, scrolling=False)
+
+
 def plot_rover_path_mpl(
     model: nn.Module,
     X: np.ndarray,
@@ -3436,26 +3639,32 @@ def render_neural_pathfinding_tab():
             dataset_name = saved_comp.get("dataset_name", "2D Dataset")
             arch_str = saved_comp.get("arch_b", "Model B")
 
+    # Initialize simulation parameter defaults dynamically if not present
+    st.session_state.setdefault("rover_start_x1", -1.80)
+    st.session_state.setdefault("rover_start_x2", 1.20)
+    st.session_state.setdefault("rover_target_x1", 1.20)
+    st.session_state.setdefault("rover_target_x2", 0.70)
+    st.session_state.setdefault("rover_step_size", 0.09)
+    st.session_state.setdefault("rover_ray_len", 0.35)
+    st.session_state.setdefault("rover_avoid_wt", 1.80)
+    st.session_state.setdefault("rover_tangent_wt", 1.20)
+    st.session_state.setdefault("rover_num_rays", 5)
+    st.session_state.setdefault("rover_max_steps", 120)
+    st.session_state.setdefault("rover_show_rays", True)
+
     active_eval_model = model if nav_mode == "Single Model Mission" else saved_comp["model_a"]
-    # Initialize coordinates dynamically if not present
-    if "rover_start_x1" not in st.session_state:
+    # Discover safe waypoints on first load if default
+    if "_rover_waypoints_initialized" not in st.session_state:
+        st.session_state["_rover_waypoints_initialized"] = True
         if active_eval_model is not None:
             try:
                 auto_s, auto_t = find_safe_waypoints(active_eval_model)
-                st.session_state.setdefault("rover_start_x1", float(auto_s[0]))
-                st.session_state.setdefault("rover_start_x2", float(auto_s[1]))
-                st.session_state.setdefault("rover_target_x1", float(auto_t[0]))
-                st.session_state.setdefault("rover_target_x2", float(auto_t[1]))
+                st.session_state["rover_start_x1"] = float(auto_s[0])
+                st.session_state["rover_start_x2"] = float(auto_s[1])
+                st.session_state["rover_target_x1"] = float(auto_t[0])
+                st.session_state["rover_target_x2"] = float(auto_t[1])
             except Exception:
-                st.session_state.setdefault("rover_start_x1", -1.80)
-                st.session_state.setdefault("rover_start_x2", 1.20)
-                st.session_state.setdefault("rover_target_x1", 1.20)
-                st.session_state.setdefault("rover_target_x2", 0.70)
-        else:
-            st.session_state.setdefault("rover_start_x1", -1.80)
-            st.session_state.setdefault("rover_start_x2", 1.20)
-            st.session_state.setdefault("rover_target_x1", 1.20)
-            st.session_state.setdefault("rover_target_x2", 0.70)
+                pass
 
     # Process incoming map click events BEFORE sidebar widgets instantiate
     for map_k in ["rover_plotly_map", "rover_plotly_map_standby", "plotly_rover_a", "plotly_rover_b", "plotly_rover_a_standby", "plotly_rover_b_standby"]:
@@ -3684,13 +3893,13 @@ def render_neural_pathfinding_tab():
                 st.warning(f"Start is inside an obstacle zone ({start_haz*100:.1f}% hazard). Use 'Auto-Detect Route' to snap to open space.")
 
         with st.expander("Physical Simulation Tuning", expanded=True):
-            step_size = st.slider("Step Size (Speed)", min_value=0.04, max_value=0.25, value=0.09, step=0.01, key="rover_step_size")
-            ray_len = st.slider("Sensor Lookahead", min_value=0.15, max_value=0.70, value=0.35, step=0.05, key="rover_ray_len")
-            avoidance_weight = st.slider("Repulsion Weight", min_value=0.5, max_value=6.0, value=1.8, step=0.25, key="rover_avoid_wt")
-            tangent_weight = st.slider("Tangent Wall-Following Weight", min_value=0.0, max_value=4.0, value=1.2, step=0.25, key="rover_tangent_wt")
-            num_rays = st.slider("Sensor Ray Count", min_value=3, max_value=9, value=5, step=2, key="rover_num_rays")
-            max_steps = st.slider("Max Steps", min_value=20, max_value=180, value=120, step=5, key="rover_max_steps")
-            show_sensor_rays = st.checkbox("Show Sensor Radar Rays", value=True, key="rover_show_rays")
+            step_size = st.slider("Step Size (Speed)", min_value=0.04, max_value=0.25, step=0.01, key="rover_step_size")
+            ray_len = st.slider("Sensor Lookahead", min_value=0.15, max_value=0.70, step=0.05, key="rover_ray_len")
+            avoidance_weight = st.slider("Repulsion Weight", min_value=0.5, max_value=6.0, step=0.25, key="rover_avoid_wt")
+            tangent_weight = st.slider("Tangent Wall-Following Weight", min_value=0.0, max_value=4.0, step=0.25, key="rover_tangent_wt")
+            num_rays = st.slider("Sensor Ray Count", min_value=3, max_value=9, step=2, key="rover_num_rays")
+            max_steps = st.slider("Max Steps", min_value=20, max_value=180, step=5, key="rover_max_steps")
+            show_sensor_rays = st.checkbox("Show Sensor Radar Rays", key="rover_show_rays")
 
         btn_label = "Launch Rover Simulation" if nav_mode == "Single Model Mission" else "Start Dual-Model Race"
         launch_rover = st.button(btn_label, type="primary", width="stretch", key="launch_rover_btn")
@@ -3815,13 +4024,12 @@ def render_neural_pathfinding_tab():
                         show_rays=show_sensor_rays,
                         title=f"Rover Mission on {dataset_name} ({arch_str}) - {steps_taken} Steps",
                     )
-                    st.plotly_chart(
-                        fig_rover,
-                        on_select="rerun",
-                        selection_mode=["points"],
-                        key="rover_animated_map",
-                        config={"displayModeBar": False, "scrollZoom": False},
-                        width="stretch",
+                    render_plotly_rover_player(
+                        fig=fig_rover,
+                        total_steps=len(trajectory),
+                        initial_step=0,
+                        player_id="main",
+                        height=610,
                     )
                 else:
                     fig_rover_mpl = plot_rover_path_mpl(model, X, y, trajectory, start_pos, target_pos)
@@ -4023,11 +4231,12 @@ def render_neural_pathfinding_tab():
                         show_rays=show_sensor_rays,
                         title=f"Model A ({arch_a}) Potential Field",
                     )
-                    st.plotly_chart(
-                        fig_a,
-                        key="plotly_rover_a",
-                        config={"displayModeBar": False, "scrollZoom": False},
-                        width="stretch",
+                    render_plotly_rover_player(
+                        fig=fig_a,
+                        total_steps=len(traj_a),
+                        initial_step=0,
+                        player_id="race_a",
+                        height=590,
                     )
                 else:
                     fig_a_mpl = plot_rover_path_mpl(model_a, X, y, traj_a, start_pos, target_pos)
@@ -4049,11 +4258,12 @@ def render_neural_pathfinding_tab():
                         show_rays=show_sensor_rays,
                         title=f"Model B ({arch_b}) Potential Field",
                     )
-                    st.plotly_chart(
-                        fig_b,
-                        key="plotly_rover_b",
-                        config={"displayModeBar": False, "scrollZoom": False},
-                        width="stretch",
+                    render_plotly_rover_player(
+                        fig=fig_b,
+                        total_steps=len(traj_b),
+                        initial_step=0,
+                        player_id="race_b",
+                        height=590,
                     )
                 else:
                     fig_b_mpl = plot_rover_path_mpl(model_b, X, y, traj_b, start_pos, target_pos)
