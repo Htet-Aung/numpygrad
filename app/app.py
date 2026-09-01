@@ -1569,11 +1569,11 @@ def plot_plotly_rover_path(
     num_rays = len(ray_history[0]) if (show_rays and ray_history and len(ray_history) > 0 and len(ray_history[0]) > 0) else 0
 
     if has_sim:
-        active_step = max(0, min(step_index, len(trajectory) - 1)) if step_index is not None else 0
+        active_step = max(0, min(step_index, len(trajectory) - 1)) if step_index is not None else (len(trajectory) - 1)
         init_p = trajectory[active_step]
         init_traj = trajectory[: active_step + 1]
 
-        # Trace 7: Rover Path
+        # Trace 7: Rover Path (History up to active_step)
         fig.add_trace(
             go.Scatter(
                 x=[p[0] for p in init_traj],
@@ -1589,7 +1589,7 @@ def plot_plotly_rover_path(
             )
         )
 
-        # Trace 8: Rover Position
+        # Trace 8: Rover Position (At active_step)
         fig.add_trace(
             go.Scatter(
                 x=[init_p[0]],
@@ -1607,7 +1607,7 @@ def plot_plotly_rover_path(
             )
         )
 
-        # Traces 9 .. 9 + num_rays - 1: Radar Rays
+        # Traces 9 .. 9 + num_rays - 1: Radar Rays (At active_step)
         for r_idx in range(num_rays):
             if active_step < len(ray_history):
                 r = ray_history[active_step][r_idx]
@@ -1630,158 +1630,6 @@ def plot_plotly_rover_path(
                 )
             else:
                 fig.add_trace(go.Scatter(x=[], y=[], mode="lines", showlegend=False))
-
-        # Build native animation frames for each step in trajectory
-        frames = []
-        slider_steps = []
-        dyn_indices = list(range(7, 9 + num_rays))
-
-        for k in range(len(trajectory)):
-            sub_traj = trajectory[: k + 1]
-            cur_p = trajectory[k]
-
-            f_path = go.Scatter(
-                x=[p[0] for p in sub_traj],
-                y=[p[1] for p in sub_traj],
-                mode="lines+markers",
-                name="Rover Path",
-                line=dict(color="#FBBF24", width=3.5),
-                marker=dict(color="#F59E0B", size=6, symbol="circle"),
-                hovertext=[f"Step {idx}: ({p[0]:.2f}, {p[1]:.2f})" for idx, p in enumerate(sub_traj)],
-                hoverinfo="text",
-            )
-
-            f_pos = go.Scatter(
-                x=[cur_p[0]],
-                y=[cur_p[1]],
-                mode="markers+text",
-                name="Rover Position",
-                text=[f"Step {k}"],
-                textposition="bottom center",
-                textfont=dict(color="#FBBF24", size=11, family="sans-serif"),
-                marker=dict(symbol="cross", size=14, color="#FBBF24", line=dict(color="#FFFFFF", width=2)),
-                hovertext=[f"Current Rover: ({cur_p[0]:.2f}, {cur_p[1]:.2f}) at Step {k}"],
-                hoverinfo="text",
-            )
-
-            f_rays = []
-            if num_rays > 0 and k < len(ray_history):
-                for r_idx in range(num_rays):
-                    r = ray_history[k][r_idx]
-                    r_end = r["endpoint"]
-                    h_val = r["hazard"]
-                    r_col = get_ray_color(h_val)
-                    f_rays.append(
-                        go.Scatter(
-                            x=[cur_p[0], r_end[0]],
-                            y=[cur_p[1], r_end[1]],
-                            mode="lines+markers",
-                            line=dict(color=r_col, width=2.8, dash="solid"),
-                            marker=dict(size=6, color=r_col, symbol="diamond"),
-                            hovertext=[f"Origin ({cur_p[0]:.2f}, {cur_p[1]:.2f})", f"Ray #{r_idx+1}: Hazard P={h_val*100:.1f}%"],
-                            hoverinfo="text",
-                            showlegend=False,
-                        )
-                    )
-            else:
-                for _ in range(num_rays):
-                    f_rays.append(go.Scatter(x=[], y=[], mode="lines", showlegend=False))
-
-            frames.append(
-                go.Frame(
-                    name=str(k),
-                    data=[f_path, f_pos] + f_rays,
-                    traces=dyn_indices,
-                )
-            )
-
-            slider_steps.append(
-                dict(
-                    method="animate",
-                    label=str(k),
-                    args=[
-                        [str(k)],
-                        dict(
-                            mode="immediate",
-                            frame=dict(duration=0, redraw=False),
-                            transition=dict(duration=0),
-                        ),
-                    ],
-                )
-            )
-
-        fig.frames = frames
-
-        updatemenus = [
-            dict(
-                type="buttons",
-                showactive=False,
-                direction="left",
-                x=0.015,
-                y=-0.12,
-                xanchor="left",
-                yanchor="top",
-                pad=dict(t=8, r=10),
-                bgcolor="rgba(30, 41, 59, 0.9)",
-                bordercolor="#334155",
-                borderwidth=1,
-                font=dict(color="#F8FAFC", size=11),
-                buttons=[
-                    dict(
-                        label="Play",
-                        method="animate",
-                        args=[
-                            None,
-                            dict(
-                                frame=dict(duration=frame_duration, redraw=False),
-                                fromcurrent=True,
-                                transition=dict(duration=0),
-                                mode="immediate",
-                            ),
-                        ],
-                    ),
-                    dict(
-                        label="Pause",
-                        method="animate",
-                        args=[
-                            [None],
-                            dict(
-                                frame=dict(duration=0, redraw=False),
-                                mode="immediate",
-                                transition=dict(duration=0),
-                            ),
-                        ],
-                    ),
-                ],
-            )
-        ]
-
-        sliders = [
-            dict(
-                active=active_step,
-                steps=slider_steps,
-                x=0.18,
-                y=-0.12,
-                len=0.80,
-                xanchor="left",
-                yanchor="top",
-                pad=dict(t=8, b=10),
-                currentvalue=dict(
-                    font=dict(size=12, color="#38BDF8"),
-                    prefix="Step: ",
-                    visible=True,
-                    xanchor="right",
-                ),
-                font=dict(color="#CBD5E1", size=10),
-                bgcolor="rgba(30, 41, 59, 0.8)",
-                bordercolor="#334155",
-                tickcolor="#334155",
-                ticklen=4,
-            )
-        ]
-    else:
-        updatemenus = []
-        sliders = []
 
     fig.update_layout(
         uirevision="rover_sim_viewport",
@@ -1811,7 +1659,7 @@ def plot_plotly_rover_path(
             range=[-2.5, 2.5],
         ),
         clickmode="event+select",
-        margin=dict(l=45, r=45, t=115, b=85 if has_sim else 45),
+        margin=dict(l=45, r=45, t=115, b=45),
         legend=dict(
             orientation="h",
             yanchor="bottom",
@@ -1823,11 +1671,11 @@ def plot_plotly_rover_path(
             bordercolor="#334155",
             borderwidth=1,
         ),
-        updatemenus=updatemenus,
-        sliders=sliders,
+        updatemenus=[],
+        sliders=[],
         paper_bgcolor="#0F172A",
         plot_bgcolor="#0F172A",
-        height=620 if has_sim else 560,
+        height=560,
     )
     return fig
 
@@ -3437,20 +3285,25 @@ def render_neural_pathfinding_tab():
             arch_str = saved_comp.get("arch_b", "Model B")
 
     active_eval_model = model if nav_mode == "Single Model Mission" else saved_comp["model_a"]
-
     # Initialize coordinates dynamically if not present
-    if "rover_start_x1" not in st.session_state and active_eval_model is not None:
-        try:
-            auto_s, auto_t = find_safe_waypoints(active_eval_model)
-            st.session_state["rover_start_x1"] = auto_s[0]
-            st.session_state["rover_start_x2"] = auto_s[1]
-            st.session_state["rover_target_x1"] = auto_t[0]
-            st.session_state["rover_target_x2"] = auto_t[1]
-        except Exception:
-            st.session_state["rover_start_x1"] = -1.80
-            st.session_state["rover_start_x2"] = 1.20
-            st.session_state["rover_target_x1"] = 1.20
-            st.session_state["rover_target_x2"] = 0.70
+    if "rover_start_x1" not in st.session_state:
+        if active_eval_model is not None:
+            try:
+                auto_s, auto_t = find_safe_waypoints(active_eval_model)
+                st.session_state.setdefault("rover_start_x1", float(auto_s[0]))
+                st.session_state.setdefault("rover_start_x2", float(auto_s[1]))
+                st.session_state.setdefault("rover_target_x1", float(auto_t[0]))
+                st.session_state.setdefault("rover_target_x2", float(auto_t[1]))
+            except Exception:
+                st.session_state.setdefault("rover_start_x1", -1.80)
+                st.session_state.setdefault("rover_start_x2", 1.20)
+                st.session_state.setdefault("rover_target_x1", 1.20)
+                st.session_state.setdefault("rover_target_x2", 0.70)
+        else:
+            st.session_state.setdefault("rover_start_x1", -1.80)
+            st.session_state.setdefault("rover_start_x2", 1.20)
+            st.session_state.setdefault("rover_target_x1", 1.20)
+            st.session_state.setdefault("rover_target_x2", 0.70)
 
     # Process incoming map click events BEFORE sidebar widgets instantiate
     for map_k in ["rover_plotly_map", "rover_plotly_map_standby", "plotly_rover_a", "plotly_rover_b", "plotly_rover_a_standby", "plotly_rover_b_standby"]:
@@ -3523,6 +3376,27 @@ def render_neural_pathfinding_tab():
         st.session_state.pop("rover_sim_a", None)
         st.session_state.pop("rover_sim_b", None)
 
+    # Playback control callbacks (defined at top scope for reliable callback execution)
+    def _step_rover_back10():
+        st.session_state["rover_sim_playing"] = False
+        st.session_state["rover_current_step"] = max(0, st.session_state.get("rover_current_step", 0) - 10)
+
+    def _toggle_rover_play():
+        is_playing = st.session_state.get("rover_sim_playing", False)
+        new_playing = not is_playing
+        st.session_state["rover_sim_playing"] = new_playing
+        sim = st.session_state.get("rover_sim")
+        if sim and "trajectory" in sim:
+            tot_steps = len(sim["trajectory"])
+            if new_playing and st.session_state.get("rover_current_step", 0) >= tot_steps - 1:
+                st.session_state["rover_current_step"] = 0
+
+    def _step_rover_fwd10():
+        st.session_state["rover_sim_playing"] = False
+        sim = st.session_state.get("rover_sim")
+        tot_steps = len(sim["trajectory"]) if (sim and "trajectory" in sim) else 120
+        st.session_state["rover_current_step"] = min(tot_steps - 1, st.session_state.get("rover_current_step", 0) + 10)
+
     # ---------------- Sidebar Controls ----------------
     with st.sidebar:
         st.header("Rover Navigation Controls")
@@ -3587,10 +3461,10 @@ def render_neural_pathfinding_tab():
                 kwargs={"sx1": -1.80, "sx2": -1.80, "tx1": 1.80, "tx2": 1.80},
             )
 
-        start_x1 = st.slider("Start Position x1", -2.4, 2.4, st.session_state.get("rover_start_x1", -1.80), 0.05, key="rover_start_x1")
-        start_x2 = st.slider("Start Position x2", -2.4, 2.4, st.session_state.get("rover_start_x2", 1.20), 0.05, key="rover_start_x2")
-        target_x1 = st.slider("Target Goal x1", -2.4, 2.4, st.session_state.get("rover_target_x1", 1.20), 0.05, key="rover_target_x1")
-        target_x2 = st.slider("Target Goal x2", -2.4, 2.4, st.session_state.get("rover_target_x2", 0.70), 0.05, key="rover_target_x2")
+        start_x1 = st.slider("Start Position x1", min_value=-2.4, max_value=2.4, step=0.05, key="rover_start_x1")
+        start_x2 = st.slider("Start Position x2", min_value=-2.4, max_value=2.4, step=0.05, key="rover_start_x2")
+        target_x1 = st.slider("Target Goal x1", min_value=-2.4, max_value=2.4, step=0.05, key="rover_target_x1")
+        target_x2 = st.slider("Target Goal x2", min_value=-2.4, max_value=2.4, step=0.05, key="rover_target_x2")
 
         with st.expander("Waypoint Micro-Nudge Controls", expanded=False):
             st.caption("Nudge Start (S) Position (0.10 step):")
@@ -3679,12 +3553,12 @@ def render_neural_pathfinding_tab():
                 st.warning(f"Start is inside an obstacle zone ({start_haz*100:.1f}% hazard). Use 'Auto-Detect Route' to snap to open space.")
 
         with st.expander("Physical Simulation Tuning", expanded=True):
-            step_size = st.slider("Step Size (Speed)", 0.04, 0.25, 0.09, 0.01, key="rover_step_size")
-            ray_len = st.slider("Sensor Lookahead", 0.15, 0.70, 0.35, 0.05, key="rover_ray_len")
-            avoidance_weight = st.slider("Repulsion Weight", 0.5, 6.0, 1.8, 0.25, key="rover_avoid_wt")
-            tangent_weight = st.slider("Tangent Wall-Following Weight", 0.0, 4.0, 1.2, 0.25, key="rover_tangent_wt")
-            num_rays = st.slider("Sensor Ray Count", 3, 9, 5, 2, key="rover_num_rays")
-            max_steps = st.slider("Max Steps", 20, 180, 120, 5, key="rover_max_steps")
+            step_size = st.slider("Step Size (Speed)", min_value=0.04, max_value=0.25, value=0.09, step=0.01, key="rover_step_size")
+            ray_len = st.slider("Sensor Lookahead", min_value=0.15, max_value=0.70, value=0.35, step=0.05, key="rover_ray_len")
+            avoidance_weight = st.slider("Repulsion Weight", min_value=0.5, max_value=6.0, value=1.8, step=0.25, key="rover_avoid_wt")
+            tangent_weight = st.slider("Tangent Wall-Following Weight", min_value=0.0, max_value=4.0, value=1.2, step=0.25, key="rover_tangent_wt")
+            num_rays = st.slider("Sensor Ray Count", min_value=3, max_value=9, value=5, step=2, key="rover_num_rays")
+            max_steps = st.slider("Max Steps", min_value=20, max_value=180, value=120, step=5, key="rover_max_steps")
             show_sensor_rays = st.checkbox("Show Sensor Radar Rays", value=True, key="rover_show_rays")
 
         btn_label = "Launch Rover Simulation" if nav_mode == "Single Model Mission" else "Start Dual-Model Race"
@@ -3735,6 +3609,8 @@ def render_neural_pathfinding_tab():
             st.session_state["rover_sim"] = sim_result
             st.session_state["sim_active_start"] = start_pos
             st.session_state["sim_active_target"] = target_pos
+            st.session_state["rover_sim_playing"] = False
+            st.session_state["rover_current_step"] = len(sim_result["trajectory"]) - 1
         else:
             sim_result = st.session_state.get("rover_sim", None)
 
@@ -3746,6 +3622,25 @@ def render_neural_pathfinding_tab():
             collisions = sim_result["collisions"]
             steps_taken = sim_result["steps_taken"]
             final_dist = sim_result["final_distance"]
+            total_trajectory_steps = len(trajectory)
+
+            st.session_state.setdefault("rover_sim_playing", False)
+            st.session_state.setdefault("rover_current_step", total_trajectory_steps - 1)
+
+            # Advance frame if currently playing
+            if st.session_state.get("rover_sim_playing", False):
+                if st.session_state["rover_current_step"] < total_trajectory_steps - 1:
+                    st.session_state["rover_current_step"] += 1
+                else:
+                    st.session_state["rover_sim_playing"] = False
+
+            # Clamp current step within valid bounds
+            if st.session_state["rover_current_step"] >= total_trajectory_steps:
+                st.session_state["rover_current_step"] = total_trajectory_steps - 1
+            elif st.session_state["rover_current_step"] < 0:
+                st.session_state["rover_current_step"] = 0
+
+            current_step = st.session_state["rover_current_step"]
 
             path_len = 0.0
             for i in range(1, len(trajectory)):
@@ -3808,7 +3703,8 @@ def render_neural_pathfinding_tab():
                         start_pos=start_pos,
                         target_pos=target_pos,
                         show_rays=show_sensor_rays,
-                        title=f"Rover Mission on {dataset_name} ({arch_str}) - {steps_taken} Steps",
+                        step_index=current_step,
+                        title=f"Rover Mission on {dataset_name} ({arch_str}) - Step {current_step} / {total_trajectory_steps - 1}",
                     )
                     st.plotly_chart(
                         fig_rover,
@@ -3822,6 +3718,34 @@ def render_neural_pathfinding_tab():
                     fig_rover_mpl = plot_rover_path_mpl(model, X, y, trajectory, start_pos, target_pos)
                     st.pyplot(fig_rover_mpl)
                     plt.close(fig_rover_mpl)
+
+                # ---------------- Horizontal Playback Control Bar ----------------
+                col_back, col_play, col_fwd, col_slider = st.columns([1, 1.2, 1, 6], vertical_alignment="center")
+
+                with col_back:
+                    st.button("⏪ -10", width="stretch", key="btn_rover_step_back", on_click=_step_rover_back10)
+
+                with col_play:
+                    is_playing = st.session_state.get("rover_sim_playing", False)
+                    play_label = "⏸ Pause" if is_playing else "▶ Play"
+                    st.button(play_label, type="primary" if not is_playing else "secondary", width="stretch", key="btn_rover_play_toggle", on_click=_toggle_rover_play)
+
+                with col_fwd:
+                    st.button("⏩ +10", width="stretch", key="btn_rover_step_fwd", on_click=_step_rover_fwd10)
+
+                with col_slider:
+                    def _on_scrubber_change():
+                        st.session_state["rover_sim_playing"] = False
+
+                    st.slider(
+                        "Trajectory Step Scrubber",
+                        min_value=0,
+                        max_value=max(1, total_trajectory_steps - 1),
+                        step=1,
+                        key="rover_current_step",
+                        on_change=_on_scrubber_change,
+                        label_visibility="collapsed",
+                    )
 
             with col_details:
                 st.subheader("Rover Mission Diagnostics")
@@ -3871,6 +3795,11 @@ def render_neural_pathfinding_tab():
                         "State": "Collision Breach" if haz_i > 0.55 else ("At Goal" if dist_i <= step_size else "In Transit"),
                     })
                 st.dataframe(table_rows, width="stretch", hide_index=True)
+
+            # ---------------- Playback Frame Advancer Loop ----------------
+            if st.session_state.get("rover_sim_playing", False):
+                time.sleep(0.04)
+                st.rerun()
 
         else:
             # Standby state before "Launch Full Mission" is clicked
