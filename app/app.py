@@ -12,6 +12,7 @@ Tabs:
 import sys
 import os
 import time
+import json
 from typing import Tuple, List, Dict, Any, Optional, Union
 
 # Ensure src/ is on the Python path
@@ -1839,11 +1840,18 @@ def render_plotly_rover_player(
     player_id: str = "main",
     height: int = 610,
 ) -> None:
-    """Renders Plotly figure with seamless client-side animation and a unified Play/Pause toggle + Skip -10/+10 controls."""
+    """Renders Plotly figure with seamless client-side animation, minimal vector icon controls, and paused initial state."""
     if not HAS_PLOTLY or fig is None:
         return
 
-    # Clear internal Plotly updatemenus and sliders so only our custom bar is rendered
+    # Extract frames so Plotly.to_html does NOT automatically trigger auto-play
+    frames_json = "[]"
+    if hasattr(fig, "frames") and fig.frames:
+        frames_list = [f.to_plotly_json() if hasattr(f, "to_plotly_json") else f for f in fig.frames]
+        frames_json = json.dumps(frames_list)
+        fig.frames = []
+
+    # Clear internal Plotly updatemenus and sliders so only our custom minimal bar is rendered
     fig.layout.updatemenus = []
     fig.layout.sliders = []
     fig.layout.height = 540
@@ -1868,44 +1876,67 @@ def render_plotly_rover_player(
         gap: 10px;
         background: #1E293B;
         border: 1px solid #334155;
-        border-radius: 8px;
+        border-radius: 10px;
         padding: 8px 14px;
         margin: 4px 6px 0 6px;
     }}
-    .rover-btn {{
-        background: #334155;
-        color: #F8FAFC;
-        border: 1px solid #475569;
-        border-radius: 6px;
-        padding: 6px 14px;
-        font-size: 13px;
-        font-weight: 600;
+    .rover-icon-btn {{
+        background: #0F172A;
+        color: #94A3B8;
+        border: 1px solid #334155;
+        border-radius: 8px;
+        height: 36px;
+        padding: 0 10px;
         cursor: pointer;
         transition: all 0.15s ease;
         user-select: none;
         display: inline-flex;
         align-items: center;
         justify-content: center;
+        gap: 4px;
     }}
-    .rover-btn:hover {{
-        background: #475569;
-        border-color: #64748B;
+    .rover-icon-btn:hover {{
+        background: #334155;
+        color: #F8FAFC;
+        border-color: #475569;
     }}
-    .rover-btn:active {{
-        transform: scale(0.97);
+    .rover-icon-btn:active {{
+        transform: scale(0.94);
     }}
-    .rover-btn-play {{
+    .rover-btn-skip-label {{
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: -0.2px;
+    }}
+    .rover-play-btn {{
         background: #0284C7;
-        border-color: #38BDF8;
+        border: 1px solid #38BDF8;
         color: #FFFFFF;
-        min-width: 90px;
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        cursor: pointer;
+        transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+        user-select: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 2px 8px rgba(2, 132, 199, 0.35);
+        flex-shrink: 0;
     }}
-    .rover-btn-play:hover {{
+    .rover-play-btn:hover {{
         background: #0369A1;
+        transform: scale(1.06);
+        box-shadow: 0 4px 12px rgba(2, 132, 199, 0.5);
     }}
-    .rover-btn-play.is-playing {{
-        background: #EA580C;
-        border-color: #FB923C;
+    .rover-play-btn:active {{
+        transform: scale(0.92);
+    }}
+    .rover-play-btn.is-playing {{
+        background: #0F172A;
+        border-color: #38BDF8;
+        color: #38BDF8;
+        box-shadow: 0 0 10px rgba(56, 189, 248, 0.25);
     }}
     .rover-slider {{
         flex: 1;
@@ -1919,13 +1950,14 @@ def render_plotly_rover_player(
     .rover-badge {{
         font-size: 12px;
         font-weight: 600;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
         color: #38BDF8;
-        background: rgba(56, 189, 248, 0.12);
+        background: rgba(56, 189, 248, 0.08);
         padding: 5px 10px;
         border-radius: 6px;
-        border: 1px solid rgba(56, 189, 248, 0.25);
+        border: 1px solid rgba(56, 189, 248, 0.2);
         white-space: nowrap;
-        min-width: 110px;
+        min-width: 90px;
         text-align: center;
     }}
     </style>
@@ -1933,11 +1965,40 @@ def render_plotly_rover_player(
     <div class="rover-player-wrapper">
         {fig_html}
         <div class="rover-controls-bar">
-            <button id="btn_back10_{player_id}" class="rover-btn" title="Skip 10 steps backward">⏪ -10</button>
-            <button id="btn_play_{player_id}" class="rover-btn rover-btn-play" title="Play / Pause Animation">▶ Play</button>
-            <button id="btn_fwd10_{player_id}" class="rover-btn" title="Skip 10 steps forward">⏩ +10</button>
+            <!-- Skip -10 Button -->
+            <button id="btn_back10_{player_id}" class="rover-icon-btn" title="Skip 10 steps back">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="m11 17-5-5 5-5"/>
+                    <path d="m18 17-5-5 5-5"/>
+                </svg>
+                <span class="rover-btn-skip-label">-10</span>
+            </button>
+
+            <!-- Play / Pause Toggle Button -->
+            <button id="btn_play_{player_id}" class="rover-play-btn" title="Play / Pause">
+                <svg id="icon_play_{player_id}" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="margin-left: 2px;">
+                    <polygon points="6 4 20 12 6 20 6 4"></polygon>
+                </svg>
+                <svg id="icon_pause_{player_id}" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="display:none;">
+                    <rect x="6" y="4" width="4" height="16" rx="1"></rect>
+                    <rect x="14" y="4" width="4" height="16" rx="1"></rect>
+                </svg>
+            </button>
+
+            <!-- Skip +10 Button -->
+            <button id="btn_fwd10_{player_id}" class="rover-icon-btn" title="Skip 10 steps forward">
+                <span class="rover-btn-skip-label">+10</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="m6 17 5-5-5-5"/>
+                    <path d="m13 17 5-5-5-5"/>
+                </svg>
+            </button>
+
+            <!-- Trajectory Scrubber Slider -->
             <input type="range" id="slider_{player_id}" class="rover-slider" min="0" max="{total_steps - 1}" value="{initial_step}" step="1">
-            <span id="badge_{player_id}" class="rover-badge">Step: {initial_step} / {total_steps - 1}</span>
+
+            <!-- Frame Step Badge -->
+            <span id="badge_{player_id}" class="rover-badge">{initial_step} / {total_steps - 1}</span>
         </div>
     </div>
 
@@ -1945,6 +2006,8 @@ def render_plotly_rover_player(
     (function() {{
         var gd = document.getElementById("{canvas_id}");
         var btnPlay = document.getElementById("btn_play_{player_id}");
+        var iconPlay = document.getElementById("icon_play_{player_id}");
+        var iconPause = document.getElementById("icon_pause_{player_id}");
         var btnBack = document.getElementById("btn_back10_{player_id}");
         var btnFwd = document.getElementById("btn_fwd10_{player_id}");
         var slider = document.getElementById("slider_{player_id}");
@@ -1955,9 +2018,28 @@ def render_plotly_rover_player(
         var totalSteps = {total_steps};
         var currentStep = {initial_step};
         var frameDuration = 50;
+        var rawFrames = {frames_json};
+
+        // Load pre-built frames into Plotly graph without auto-playing
+        function initFrames() {{
+            if (gd && window.Plotly && rawFrames && rawFrames.length > 0) {{
+                window.Plotly.addFrames(gd, rawFrames);
+            }}
+        }}
+
+        if (window.Plotly && gd) {{
+            initFrames();
+        }} else {{
+            var checkInterval = setInterval(function() {{
+                if (window.Plotly && gd) {{
+                    clearInterval(checkInterval);
+                    initFrames();
+                }}
+            }}, 20);
+        }}
 
         function updateUI(step) {{
-            if (badge) badge.innerText = "Step: " + step + " / " + (totalSteps - 1);
+            if (badge) badge.innerText = step + " / " + (totalSteps - 1);
             if (slider) slider.value = step;
         }}
 
@@ -1982,8 +2064,9 @@ def render_plotly_rover_player(
                 animTimer = null;
             }}
             if (btnPlay) {{
-                btnPlay.innerText = "▶ Play";
                 btnPlay.classList.remove("is-playing");
+                if (iconPlay) iconPlay.style.display = "block";
+                if (iconPause) iconPause.style.display = "none";
             }}
         }}
 
@@ -1993,8 +2076,9 @@ def render_plotly_rover_player(
             }}
             isPlaying = true;
             if (btnPlay) {{
-                btnPlay.innerText = "⏸ Pause";
                 btnPlay.classList.add("is-playing");
+                if (iconPlay) iconPlay.style.display = "none";
+                if (iconPause) iconPause.style.display = "block";
             }}
 
             animTimer = setInterval(function() {{
