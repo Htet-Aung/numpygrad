@@ -13,6 +13,7 @@ import sys
 import os
 import time
 import json
+import copy
 from typing import Tuple, List, Dict, Any, Optional, Union
 
 # Ensure src/ is on the Python path
@@ -49,6 +50,7 @@ import numpygrad.optim as optim
 from numpygrad.utils.data import TensorDataset, DataLoader
 from numpygrad.utils.pathfinding import simulate_rover_path, find_safe_waypoints
 from numpygrad.serialization import load_model
+from numpygrad.metrics import classification_metrics, stratified_indices
 
 
 # -----------------------------------------------------------------------------
@@ -455,10 +457,16 @@ def load_preset_s_bend_corridor(
     pts_X: List[List[float]] = []
     pts_y: List[int] = []
 
+    # The seven wall and seven lane segments contribute 464 points at the
+    # original density; scale their interpolation rather than duplicating
+    # samples when the studio asks for a larger dataset.
+    point_scale = max(1.0, n_samples / 464.0)
+
     # -------------------------------------------------------------
     # 1. Hazard Walls (Class 1 / Red)
     # -------------------------------------------------------------
     def add_wall_segment(p1, p2, count):
+        count = int(np.ceil(count * point_scale))
         xs = np.linspace(p1[0], p2[0], count)
         ys = np.linspace(p1[1], p2[1], count)
         for x, y in zip(xs, ys):
@@ -490,6 +498,7 @@ def load_preset_s_bend_corridor(
     # 2. Free Space Corridor (Class 0 / Blue)
     # -------------------------------------------------------------
     def add_corridor_lane(p1, p2, count, offset_spread=0.10):
+        count = int(np.ceil(count * point_scale))
         xs = np.linspace(p1[0], p2[0], count)
         ys = np.linspace(p1[1], p2[1], count)
         for x, y in zip(xs, ys):
@@ -631,7 +640,30 @@ def generate_dataset(
     if dataset_name in PRESET_GENERATOR_MAP:
         gen_fn = PRESET_GENERATOR_MAP[dataset_name]
         pts_X, pts_y = gen_fn(n_samples=n_samples, noise=noise, random_state=random_state)
-        return np.array(pts_X, dtype=np.float32), np.array(pts_y, dtype=np.int64)
+        X = np.array(pts_X, dtype=np.float32)
+        y = np.array(pts_y, dtype=np.int64)
+        # Presets with fixed anchor counts need fresh draws when the requested
+        # count exceeds one draw; copying points leaks duplicates across splits.
+        next_seed = int(random_state) + 1
+        while len(X) < n_samples:
+            extra_X, extra_y = gen_fn(n_samples=n_samples, noise=noise, random_state=next_seed)
+            X = np.concatenate((X, np.asarray(extra_X, dtype=np.float32)))
+            y = np.concatenate((y, np.asarray(extra_y, dtype=np.int64)))
+            next_seed += 1
+        if len(X) != n_samples:
+            # Some geometric presets use fixed anchor counts. Resample each
+            # class deterministically so the Sample Count control is truthful.
+            rng = np.random.default_rng(random_state + 1)
+            labels, counts = np.unique(y, return_counts=True)
+            targets = np.floor(n_samples * counts / len(y)).astype(int)
+            targets[np.argmax(counts)] += n_samples - int(targets.sum())
+            selected = np.concatenate([
+                rng.choice(np.flatnonzero(y == label), size=int(target), replace=False)
+                for label, target in zip(labels, targets)
+            ])
+            selected = rng.permutation(selected)
+            X, y = X[selected], y[selected]
+        return X, y
 
     # Two Moons fallback
     rng = np.random.default_rng(random_state)
@@ -690,6 +722,34 @@ def build_model(
     # Final classification head (2 output classes)
     layers.append(nn.Linear(hidden_dim, 2))
     return nn.Sequential(*layers)
+
+
+def studio_split_indices(
+    labels: np.ndarray,
+    seed: int,
+    features: Optional[np.ndarray] = None,
+    dataset_name: str = "",
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Keep most points for training and cover corridor regions in evaluation."""
+    if dataset_name in ("Corridor Maze", "S-Bend Corridor") and features is not None:
+        # A class-only split can omit a narrow channel from validation even
+        # when that channel is the model's most serious map error.
+        y_band = np.searchsorted([-1.0, 0.0, 1.0], features[:, 1])
+        x_half = (features[:, 0] >= 0).astype(np.int64)
+        region_labels = labels * 8 + y_band * 2 + x_half
+        region_counts = np.unique(region_labels, return_counts=True)[1]
+        if region_counts.min() >= 10:
+            return stratified_indices(
+                region_labels, seed=seed,
+                validation_fraction=0.1, test_fraction=0.1,
+            )
+    smallest_class = int(np.unique(labels, return_counts=True)[1].min())
+    holdout_fraction = 0.2 if smallest_class < 10 else 0.1
+    return stratified_indices(
+        labels, seed=seed,
+        validation_fraction=holdout_fraction,
+        test_fraction=holdout_fraction,
+    )
 
 
 def get_architecture_summary(model: nn.Sequential) -> str:
@@ -2554,17 +2614,19 @@ def render_single_model_studio():
         lr = st.select_slider(
             "Learning Rate",
             options=[0.001, 0.005, 0.01, 0.02, 0.03, 0.05, 0.1, 0.2],
-            value=0.03,
+            value=0.01,
             key="single_lr",
         )
+        if dataset_name in ("Corridor Maze", "S-Bend Corridor") and optimizer_name == "AdamW" and lr >= 0.03:
+            st.warning("This learning rate can skip narrow corridor bands even with more epochs. Try 0.01 for the corridor maze.")
         momentum = 0.9
         if optimizer_name == "SGD":
             momentum = st.slider("Polyak Momentum", min_value=0.0, max_value=0.99, value=0.9, step=0.05, key="single_momentum")
 
         weight_decay = st.select_slider("Weight Decay", options=[0.0, 1e-5, 1e-4, 1e-3, 1e-2], value=1e-4, key="single_weight_decay")
         batch_size = st.select_slider("Batch Size", options=[16, 32, 64, 128], value=32, key="single_batch_size")
-        epochs = st.slider("Epochs", min_value=10, max_value=150, value=60, step=5, key="single_epochs")
-        update_freq = st.slider("UI Refresh Interval (Epochs)", min_value=1, max_value=10, value=2, step=1, key="single_update_freq")
+        epochs = st.slider("Epochs", min_value=10, max_value=150, value=100, step=5, key="single_epochs")
+        update_freq = st.slider("UI Refresh Interval (Epochs)", min_value=1, max_value=10, value=5, step=1, key="single_update_freq")
 
         if "trained_2d_model" in st.session_state:
             st.divider()
@@ -2585,6 +2647,7 @@ def render_single_model_studio():
     col_btn, col_info = st.columns([1, 3])
     with col_btn:
         start_training = st.button("Start Training", type="primary", width="stretch", key="single_start_btn")
+        st.caption("Changed settings? Click Start Training to retrain.")
     with col_info:
         total_params = (2 * hidden_dim + hidden_dim) + (num_layers - 1) * (hidden_dim * hidden_dim + hidden_dim) + (hidden_dim * 2 + 2)
         st.info(f"Dataset: **{dataset_name}** (N={n_samples}) | Architecture: **{num_layers}x {hidden_dim}d** ({total_params} Trainable Parameters) | Optimizer: **{optimizer_name}** (lr={lr})")
@@ -2618,6 +2681,10 @@ def render_single_model_studio():
                 start_training = False
 
     if start_training:
+        np.random.seed(int(seed))
+        train_idx, val_idx, test_idx = studio_split_indices(
+            y, seed=int(seed), features=X, dataset_name=dataset_name
+        )
         model = build_model(num_layers, hidden_dim, activation_name, use_batchnorm, dropout_p)
         criterion = nn.CrossEntropyLoss()
 
@@ -2626,11 +2693,15 @@ def render_single_model_studio():
         else:
             optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum, weight_decay=weight_decay)
 
-        dataset = TensorDataset(X, y)
-        loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+        dataset = TensorDataset(X[train_idx], y[train_idx])
+        loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, seed=int(seed))
+        st.caption(f"Stratified split: {len(train_idx)} train / {len(val_idx)} validation / {len(test_idx)} test · seed {seed}. Accuracy curves use validation points.")
 
         loss_history: List[float] = []
         acc_history: List[float] = []
+        best_val_nll = float("inf")
+        best_epoch = 0
+        best_state = None
         progress_bar = progress_placeholder.progress(0.0)
         start_time = time.time()
         grad_norms_single: Dict[str, float] = {}
@@ -2651,13 +2722,19 @@ def render_single_model_studio():
 
             # Epoch evaluation
             model.eval()
-            full_logits = model(Tensor(X, requires_grad=False))
+            with no_grad():
+                full_logits = model(Tensor(X[val_idx], requires_grad=False))
             preds = np.argmax(full_logits.data, axis=1)
-            accuracy = float(np.mean(preds == y) * 100.0)
+            accuracy = float(np.mean(preds == y[val_idx]) * 100.0)
+            val_nll = classification_metrics(full_logits.data, y[val_idx])["nll"]
             avg_loss = float(np.mean(epoch_losses))
 
             loss_history.append(avg_loss)
             acc_history.append(accuracy)
+            if val_nll < best_val_nll:
+                best_val_nll = val_nll
+                best_epoch = epoch
+                best_state = model.state_dict()
 
             # Update UI at regular intervals
             if epoch % update_freq == 0 or epoch == epochs or epoch == 1:
@@ -2668,7 +2745,7 @@ def render_single_model_studio():
                     m1, m2, m3, m4 = st.columns(4)
                     m1.metric("Epoch", f"{epoch} / {epochs}")
                     m2.metric("CrossEntropy Loss", f"{avg_loss:.4f}", delta=f"{-(loss_history[0] - avg_loss):.4f}" if epoch > 1 else None, delta_color="inverse")
-                    m3.metric("Classification Accuracy", f"{accuracy:.2f}%", delta=f"{accuracy - acc_history[0]:+.2f}%" if epoch > 1 else None)
+                    m3.metric("Validation Accuracy", f"{accuracy:.2f}%", delta=f"{accuracy - acc_history[0]:+.2f}%" if epoch > 1 else None)
                     m4.metric("Elapsed Time", f"{elapsed:.2f}s")
 
                 fig_b, fig_m = plot_dashboard_figures(model, X, y, loss_history, acc_history)
@@ -2679,6 +2756,11 @@ def render_single_model_studio():
 
         elapsed_total = time.time() - start_time
         progress_placeholder.empty()
+        model.load_state_dict(best_state)
+        model.eval()
+        with no_grad():
+            test_logits = model(Tensor(X[test_idx], requires_grad=False)).data
+        test_metrics = classification_metrics(test_logits, y[test_idx])
 
         # Architecture & parameter calculation
         arch_summary = get_architecture_summary(model)
@@ -2695,8 +2777,13 @@ def render_single_model_studio():
             "acc_history": acc_history,
             "arch_summary": arch_summary,
             "total_params": actual_params,
-            "final_loss": loss_history[-1],
-            "final_acc": acc_history[-1],
+            "final_loss": loss_history[best_epoch - 1],
+            "final_acc": acc_history[best_epoch - 1],
+            "checkpoint_epoch": best_epoch,
+            "test_metrics": test_metrics,
+            "split_sizes": (len(train_idx), len(val_idx), len(test_idx)),
+            "validation_indices": val_idx,
+            "seed": int(seed),
             "elapsed_time": elapsed_total,
             "grad_norms": grad_norms_single,
             "history": st.session_state.get("trained_2d_model", {}).get("history", []),
@@ -2749,7 +2836,7 @@ def render_single_model_studio():
                         </div>
                     </div>
                     <div style="margin-top: 0.5rem; font-size: 0.85rem; color: #CBD5E1;">
-                        Final Accuracy: <strong>{final_acc:.2f}%</strong> &nbsp;|&nbsp; Final Loss: <strong>{final_loss:.4f}</strong> &nbsp;|&nbsp; Training Duration: <strong>{elapsed_total:.2f}s</strong>
+                        Validation Accuracy: <strong>{final_acc:.2f}%</strong> &nbsp;|&nbsp; Selected Epoch: <strong>{saved.get("checkpoint_epoch", len(loss_hist))}</strong> &nbsp;|&nbsp; Train Loss: <strong>{final_loss:.4f}</strong> &nbsp;|&nbsp; Training Duration: <strong>{elapsed_total:.2f}s</strong>
                     </div>
                 </div>
                 """,
@@ -2760,9 +2847,29 @@ def render_single_model_studio():
         with metrics_placeholder.container():
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("Epochs Completed", f"{len(loss_hist)} / {len(loss_hist)}")
-            m2.metric("Final Loss", f"{final_loss:.4f}", delta=f"{-(loss_hist[0] - final_loss):.4f}" if len(loss_hist) > 1 else None, delta_color="inverse")
-            m3.metric("Final Accuracy", f"{final_acc:.2f}%", delta=f"{final_acc - acc_hist[0]:+.2f}%" if len(acc_hist) > 1 else None)
+            m2.metric("Selected Train Loss", f"{final_loss:.4f}", delta=f"{-(loss_hist[0] - final_loss):.4f}" if len(loss_hist) > 1 else None, delta_color="inverse")
+            m3.metric("Validation Accuracy", f"{final_acc:.2f}%", delta=f"{final_acc - acc_hist[0]:+.2f}%" if len(acc_hist) > 1 else None)
             m4.metric("Total Duration", f"{elapsed_total:.2f}s")
+            if "test_metrics" in saved:
+                tm = saved["test_metrics"]
+                st.caption(f"Held-out test · accuracy {tm['accuracy']:.1%} · macro F1 {tm['macro_f1']:.3f} · Brier {tm['brier']:.3f} · ECE {tm['ece']:.3f} · seed {saved['seed']} · train/validation/test {saved['split_sizes']}")
+        if "validation_indices" in saved:
+            with st.expander("Inspect validation mistakes and uncertain points"):
+                subset = saved["validation_indices"]
+                with no_grad():
+                    logits = model(Tensor(data_X[subset], requires_grad=False)).data
+                shifted = logits - logits.max(axis=1, keepdims=True)
+                probabilities = np.exp(shifted)
+                probabilities /= probabilities.sum(axis=1, keepdims=True)
+                pred = probabilities.argmax(axis=1)
+                true = data_y[subset]
+                order = np.lexsort((np.abs(probabilities[:, 1] - 0.5), pred == true))[:10]
+                st.dataframe([
+                    {"x1": round(float(data_X[subset[i], 0]), 2), "x2": round(float(data_X[subset[i], 1]), 2),
+                     "True class": int(true[i]), "Predicted": int(pred[i]),
+                     "P(class 1)": round(float(probabilities[i, 1]), 3), "Correct": bool(pred[i] == true[i])}
+                    for i in order
+                ], hide_index=True, width="stretch")
 
         # 3. Always render dashboard plots with test point marker overlaid
         if HAS_PLOTLY:
@@ -3111,8 +3218,8 @@ def render_model_comparison_studio():
         # 4. Shared Training Parameters
         st.subheader("4. Training Schedule")
         batch_size = st.select_slider("Batch Size", options=[16, 32, 64, 128], value=32, key="comp_bs")
-        epochs = st.slider("Epochs", min_value=10, max_value=150, value=60, step=5, key="comp_epochs")
-        update_freq = st.slider("UI Refresh Interval (Epochs)", min_value=1, max_value=10, value=2, step=1, key="comp_freq")
+        epochs = st.slider("Epochs", min_value=10, max_value=150, value=100, step=5, key="comp_epochs")
+        update_freq = st.slider("UI Refresh Interval (Epochs)", min_value=1, max_value=10, value=5, step=1, key="comp_freq")
 
         if "model_comparison" in st.session_state:
             st.divider()
@@ -3168,6 +3275,10 @@ def render_model_comparison_studio():
                 start_training = False
 
     if start_training:
+        np.random.seed(int(seed))
+        train_idx, val_idx, test_idx = studio_split_indices(
+            y, seed=int(seed), features=X, dataset_name=dataset_name
+        )
         model_a = build_model(num_layers_a, hidden_dim_a, act_a, bn_a, dropout_a)
         model_b = build_model(num_layers_b, hidden_dim_b, act_b, bn_b, dropout_b)
 
@@ -3184,11 +3295,15 @@ def render_model_comparison_studio():
         else:
             opt_b = optim.SGD(model_b.parameters(), lr=lr_b, momentum=momentum_b, weight_decay=wd_b)
 
-        dataset = TensorDataset(X, y)
-        loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+        dataset = TensorDataset(X[train_idx], y[train_idx])
+        loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, seed=int(seed))
+        st.caption(f"Shared stratified split: {len(train_idx)} train / {len(val_idx)} validation / {len(test_idx)} test · seed {seed}. Accuracy curves use validation points.")
 
         loss_hist_a, acc_hist_a = [], []
         loss_hist_b, acc_hist_b = [], []
+        best_nll_a = best_nll_b = float("inf")
+        best_epoch_a = best_epoch_b = 0
+        best_state_a = best_state_b = None
 
         progress_bar = progress_placeholder.progress(0.0)
         start_time = time.time()
@@ -3225,21 +3340,32 @@ def render_model_comparison_studio():
             # Epoch evaluation
             model_a.eval()
             model_b.eval()
-            full_t = Tensor(X, requires_grad=False)
-            
-            full_logits_a = model_a(full_t)
+            full_t = Tensor(X[val_idx], requires_grad=False)
+            with no_grad():
+                full_logits_a = model_a(full_t)
             preds_a = np.argmax(full_logits_a.data, axis=1)
-            accuracy_a = float(np.mean(preds_a == y) * 100.0)
+            accuracy_a = float(np.mean(preds_a == y[val_idx]) * 100.0)
+            val_nll_a = classification_metrics(full_logits_a.data, y[val_idx])["nll"]
             avg_loss_a = float(np.mean(epoch_losses_a))
             loss_hist_a.append(avg_loss_a)
             acc_hist_a.append(accuracy_a)
+            if val_nll_a < best_nll_a:
+                best_nll_a = val_nll_a
+                best_epoch_a = epoch
+                best_state_a = model_a.state_dict()
 
-            full_logits_b = model_b(full_t)
+            with no_grad():
+                full_logits_b = model_b(full_t)
             preds_b = np.argmax(full_logits_b.data, axis=1)
-            accuracy_b = float(np.mean(preds_b == y) * 100.0)
+            accuracy_b = float(np.mean(preds_b == y[val_idx]) * 100.0)
+            val_nll_b = classification_metrics(full_logits_b.data, y[val_idx])["nll"]
             avg_loss_b = float(np.mean(epoch_losses_b))
             loss_hist_b.append(avg_loss_b)
             acc_hist_b.append(accuracy_b)
+            if val_nll_b < best_nll_b:
+                best_nll_b = val_nll_b
+                best_epoch_b = epoch
+                best_state_b = model_b.state_dict()
 
             if epoch % update_freq == 0 or epoch == epochs or epoch == 1:
                 elapsed = time.time() - start_time
@@ -3250,8 +3376,8 @@ def render_model_comparison_studio():
                     m_ep.metric("Epoch", f"{epoch} / {epochs}")
                     m_la.metric("Loss (A)", f"{avg_loss_a:.3f}")
                     m_lb.metric("Loss (B)", f"{avg_loss_b:.3f}")
-                    m_aa.metric("Acc (A)", f"{accuracy_a:.1f}%")
-                    m_ab.metric("Acc (B)", f"{accuracy_b:.1f}%")
+                    m_aa.metric("Val Acc (A)", f"{accuracy_a:.1f}%")
+                    m_ab.metric("Val Acc (B)", f"{accuracy_b:.1f}%")
                     m_tm.metric("Elapsed", f"{elapsed:.2f}s")
 
                 arch_a_str = get_architecture_summary(model_a)
@@ -3270,6 +3396,15 @@ def render_model_comparison_studio():
 
         elapsed_total = time.time() - start_time
         progress_placeholder.empty()
+        model_a.load_state_dict(best_state_a)
+        model_b.load_state_dict(best_state_b)
+        model_a.eval()
+        model_b.eval()
+        with no_grad():
+            test_a = model_a(Tensor(X[test_idx], requires_grad=False)).data
+            test_b = model_b(Tensor(X[test_idx], requires_grad=False)).data
+        test_metrics_a = classification_metrics(test_a, y[test_idx])
+        test_metrics_b = classification_metrics(test_b, y[test_idx])
 
         arch_a_str = get_architecture_summary(model_a)
         arch_b_str = get_architecture_summary(model_b)
@@ -3294,10 +3429,16 @@ def render_model_comparison_studio():
             "act_b": act_b,
             "params_a": actual_params_a,
             "params_b": actual_params_b,
-            "final_loss_a": loss_hist_a[-1],
-            "final_acc_a": acc_hist_a[-1],
-            "final_loss_b": loss_hist_b[-1],
-            "final_acc_b": acc_hist_b[-1],
+            "final_loss_a": loss_hist_a[best_epoch_a - 1],
+            "final_acc_a": acc_hist_a[best_epoch_a - 1],
+            "final_loss_b": loss_hist_b[best_epoch_b - 1],
+            "final_acc_b": acc_hist_b[best_epoch_b - 1],
+            "checkpoint_epoch_a": best_epoch_a,
+            "checkpoint_epoch_b": best_epoch_b,
+            "test_metrics_a": test_metrics_a,
+            "test_metrics_b": test_metrics_b,
+            "split_sizes": (len(train_idx), len(val_idx), len(test_idx)),
+            "seed": int(seed),
             "elapsed_time": elapsed_total,
             "grad_norms_a": grad_norms_a,
             "grad_norms_b": grad_norms_b,
@@ -3371,11 +3512,17 @@ def render_model_comparison_studio():
             comp_table = [
                 {"Metric": "Architecture Topology", "Model A": f"{arch_a_str} ({act_a_str})", "Model B": f"{arch_b_str} ({act_b_str})", "Comparison": f"Model B has higher capacity"},
                 {"Metric": "Trainable Parameters", "Model A": f"{p_a:,}", "Model B": f"{p_b:,}", "Comparison": f"Model B is {param_ratio:.1f}x larger"},
-                {"Metric": "Final Accuracy", "Model A": f"{f_acc_a:.2f}%", "Model B": f"{f_acc_b:.2f}%", "Comparison": f"{acc_diff:+.2f}% Accuracy delta"},
-                {"Metric": "Final CrossEntropy Loss", "Model A": f"{f_loss_a:.4f}", "Model B": f"{f_loss_b:.4f}", "Comparison": f"{loss_diff:+.4f} Loss delta"},
+                {"Metric": "Validation Accuracy", "Model A": f"{f_acc_a:.2f}%", "Model B": f"{f_acc_b:.2f}%", "Comparison": f"{acc_diff:+.2f}% Accuracy delta"},
+                {"Metric": "Selected Train Loss", "Model A": f"{f_loss_a:.4f}", "Model B": f"{f_loss_b:.4f}", "Comparison": f"{loss_diff:+.4f} Loss delta"},
                 {"Metric": "Total Training Time", "Model A": f"{elapsed_total:.2f}s", "Model B": f"{elapsed_total:.2f}s", "Comparison": "Synchronized training"},
             ]
+            if "test_metrics_a" in saved:
+                ta, tb = saved["test_metrics_a"], saved["test_metrics_b"]
+                comp_table.append({"Metric": "Held-out Test Accuracy", "Model A": f"{ta['accuracy']:.2%}", "Model B": f"{tb['accuracy']:.2%}", "Comparison": f"{tb['accuracy'] - ta['accuracy']:+.2%}"})
+                comp_table.append({"Metric": "Held-out Macro F1", "Model A": f"{ta['macro_f1']:.3f}", "Model B": f"{tb['macro_f1']:.3f}", "Comparison": f"{tb['macro_f1'] - ta['macro_f1']:+.3f}"})
             st.dataframe(comp_table, width="stretch", hide_index=True)
+            if "split_sizes" in saved:
+                st.caption(f"Shared split: train/validation/test {saved['split_sizes']} · seed {saved['seed']}. Validation-loss checkpoints: A epoch {saved.get('checkpoint_epoch_a', len(l_hist_a))}, B epoch {saved.get('checkpoint_epoch_b', len(l_hist_b))}. Test results use those checkpoints.")
 
         # 3. Always render comparison dashboard plots with test point marker overlaid
         if HAS_PLOTLY:
@@ -3680,6 +3827,16 @@ def render_neural_pathfinding_tab():
         "sensory rays that query the neural network in real time to repel away from high-hazard obstacle regions "
         "while being attracted toward the destination target."
     )
+    study_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "docs", "results", "navigation_study.json"))
+    if os.path.exists(study_path):
+        with st.expander("Measured study: does a better obstacle classifier navigate more safely?"):
+            st.markdown("On a separate known-wall map, we trained 60 models across 10 seeds, two widths and three training label-noise levels. Route success requires reaching the goal without entering the true wall. The study uses the same rover controller shown below.")
+            plot_path = os.path.splitext(study_path)[0] + ".png"
+            if os.path.exists(plot_path):
+                st.image(plot_path, caption="Held-out classification accuracy and collision-free route success")
+            with open(study_path, encoding="utf-8") as study_file:
+                study = json.load(study_file)
+            st.caption(f"Exact-map reference: {study['oracle']['collision_free_success']:.0%} collision-free success across two routes. Each model setting contains 20 routes. See docs/NAVIGATION_STUDY.md for protocol and limitations.")
 
     has_single = "trained_2d_model" in st.session_state and st.session_state["trained_2d_model"] is not None
     has_comp = "model_comparison" in st.session_state and st.session_state["model_comparison"] is not None
@@ -3820,6 +3977,11 @@ def render_neural_pathfinding_tab():
         st.session_state.pop("rover_sim", None)
         st.session_state.pop("rover_sim_a", None)
         st.session_state.pop("rover_sim_b", None)
+
+    def _clear_rover_mission():
+        """Return both rover modes to standby without changing their setup."""
+        for key in ("rover_sim", "rover_sim_a", "rover_sim_b", "sim_active_start", "sim_active_target"):
+            st.session_state.pop(key, None)
 
     # ---------------- Sidebar Controls ----------------
     with st.sidebar:
@@ -3998,7 +4160,7 @@ def render_neural_pathfinding_tab():
         st.session_state.pop("rover_sim_b", None)
 
     # ---------------- Mission Action Bar ----------------
-    col_act1, col_act2 = st.columns([1, 1], vertical_alignment="bottom")
+    col_act1, col_act2, col_act3 = st.columns(3, vertical_alignment="bottom")
     with col_act1:
         launch_main = st.button(
             "Launch Full Mission" if nav_mode == "Single Model Mission" else "Start Dual-Model Race",
@@ -4013,6 +4175,14 @@ def render_neural_pathfinding_tab():
             key="rover_auto_route_main_btn",
             on_click=_update_waypoint_coords,
             kwargs={"auto": True},
+        )
+    with col_act3:
+        st.button(
+            "Clear Mission",
+            width="stretch",
+            key="rover_clear_mission",
+            on_click=_clear_rover_mission,
+            help="Clear the current route and telemetry while keeping the model, waypoints, and tuning settings.",
         )
 
     # ---------------- SINGLE MODEL MISSION ----------------
@@ -4457,8 +4627,8 @@ def render_mnist_inference_tab():
     from streamlit_drawable_canvas import st_canvas
 
     st.markdown(
-        "Draw a single digit (0-9) on the canvas below. "
-        "The pre-trained MNIST MLP model will classify your handwriting in real time."
+        "Draw one or more digits on the canvas below. "
+        "The pre-trained MNIST MLP classifies each segmented digit. Scores are softmax outputs, not calibrated probabilities."
     )
 
     # Load model
@@ -4476,42 +4646,20 @@ def render_mnist_inference_tab():
     with col_canvas:
         st.subheader("Drawing Canvas")
 
-        # State Management for Undo/Redo/Clear
-        if "canvas_key" not in st.session_state:
-            st.session_state["canvas_key"] = 0
+        # Seed the canvas only when entering this view. The component reloads
+        # initial_drawing and resets its undo history whenever it changes.
         if "stroke_history" not in st.session_state:
             st.session_state["stroke_history"] = []
-        if "redo_stack" not in st.session_state:
-            st.session_state["redo_stack"] = []
-
-        # Action functions for Undo, Redo, and Clear
-        def on_undo():
-            if st.session_state["stroke_history"]:
-                stroke = st.session_state["stroke_history"].pop()
-                st.session_state["redo_stack"].append(stroke)
-                st.session_state["canvas_key"] += 1
-
-        def on_redo():
-            if st.session_state["redo_stack"]:
-                stroke = st.session_state["redo_stack"].pop()
-                st.session_state["stroke_history"].append(stroke)
-                st.session_state["canvas_key"] += 1
-
-        def on_clear():
-            st.session_state["stroke_history"] = []
-            st.session_state["redo_stack"] = []
-            st.session_state["canvas_key"] += 1
+        if not st.session_state.get("_mnist_canvas_active", False):
+            st.session_state["_mnist_canvas_seed"] = {
+                "objects": copy.deepcopy(st.session_state["stroke_history"])
+            }
+            st.session_state["_mnist_canvas_active"] = True
 
         # Canvas controls
         brush_width = st.slider(
             "Brush Width", min_value=8, max_value=36, value=20, step=2,
             key="mnist_brush_width",
-        )
-
-        init_drawing = (
-            {"objects": st.session_state["stroke_history"]}
-            if st.session_state["stroke_history"]
-            else None
         )
 
         canvas_result = st_canvas(
@@ -4522,40 +4670,17 @@ def render_mnist_inference_tab():
             height=280,
             width=280,
             drawing_mode="freedraw",
-            display_toolbar=False,
-            initial_drawing=init_drawing,
-            key=f"mnist_canvas_{st.session_state['canvas_key']}",
+            return_image_data=True,
+            initial_drawing=st.session_state["_mnist_canvas_seed"],
+            key="mnist_canvas",
         )
 
-        # Synchronize stroke history only when NEW strokes are drawn by the user
+        # Synchronize strokes after drawing or using the component's native toolbar.
         if canvas_result is not None and canvas_result.json_data is not None and "objects" in canvas_result.json_data:
             current_objects = canvas_result.json_data["objects"]
-            if len(current_objects) > len(st.session_state["stroke_history"]):
+            if current_objects != st.session_state["stroke_history"]:
                 st.session_state["stroke_history"] = current_objects
-                st.session_state["redo_stack"] = []
-
-        # Native Action Buttons Row
-        c1, c2, c3 = st.columns(3)
-        c1.button(
-            "Undo",
-            width="stretch",
-            key="mnist_undo",
-            on_click=on_undo,
-            disabled=len(st.session_state["stroke_history"]) == 0,
-        )
-        c2.button(
-            "Redo",
-            width="stretch",
-            key="mnist_redo",
-            on_click=on_redo,
-            disabled=len(st.session_state["redo_stack"]) == 0,
-        )
-        c3.button(
-            "Clear",
-            width="stretch",
-            key="mnist_clear",
-            on_click=on_clear,
-        )
+        st.caption("Use the canvas toolbar to undo, redo, or reset your drawing.")
 
         # Preprocess and show thumbnails
         digits = segment_and_preprocess_digits(canvas_result)
@@ -4594,7 +4719,7 @@ def render_mnist_inference_tab():
                     <div class="prediction-card">
                         <p class="prediction-label">Predicted Digit</p>
                         <p class="prediction-digit">{pred_cls}</p>
-                        <p class="prediction-confidence">{conf * 100:.1f}% Confidence</p>
+                        <p class="prediction-confidence">{conf * 100:.1f}% Softmax Score</p>
                     </div>
                     """,
                     unsafe_allow_html=True,
@@ -4641,7 +4766,7 @@ def render_mnist_inference_tab():
                     <div class="prediction-card">
                         <p class="prediction-label">Recognized Number Sequence ({len(predictions)} Digits)</p>
                         <p class="prediction-digit" style="letter-spacing: 4px;">{combined_number}</p>
-                        <p class="prediction-confidence">{avg_confidence * 100:.1f}% Avg Confidence</p>
+                        <p class="prediction-confidence">{avg_confidence * 100:.1f}% Mean Softmax Score</p>
                     </div>
                     """,
                     unsafe_allow_html=True,
@@ -4702,8 +4827,10 @@ def main():
         selected_tab = "2D Decision Boundaries"
 
     if selected_tab == "2D Decision Boundaries":
+        st.session_state["_mnist_canvas_active"] = False
         render_decision_boundary_tab()
     elif selected_tab == "Autonomous Neural Pathfinding":
+        st.session_state["_mnist_canvas_active"] = False
         render_neural_pathfinding_tab()
     else:
         with st.sidebar:

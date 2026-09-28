@@ -1,2 +1,1 @@
-$env:PYTHONPATH="src"
-py -3.13 -m streamlit run app/app.py
+python -m streamlit run app/app.py

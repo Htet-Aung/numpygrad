@@ -146,6 +146,13 @@ def test_matmul_gradcheck():
     assert gradcheck(f, [x, y])
 
 
+def test_matmul_vector_cases_gradcheck():
+    for a_shape, b_shape in [((4,), (4,)), ((3, 4), (4,)), ((4,), (4, 3)), ((2, 3, 4), (4,))]:
+        a = Tensor(np.random.randn(*a_shape).astype(np.float64))
+        b = Tensor(np.random.randn(*b_shape).astype(np.float64))
+        assert gradcheck(lambda x, y: x @ y, [a, b])
+
+
 def test_batched_matmul_gradcheck():
     def f(x, y):
         return x @ y
@@ -332,6 +339,16 @@ def test_multipath_dag_gradient_accumulation():
 
     expected_grad = 2.0 * x_val + 1.0
     np.testing.assert_allclose(x.grad, expected_grad, rtol=1e-4, atol=1e-4)
+
+
+def test_repeated_backward_accumulates_only_new_leaf_gradients():
+    x = Tensor(2.0)
+    intermediate = x * x
+    loss = intermediate * intermediate
+    loss.backward()
+    np.testing.assert_allclose(x.grad, 32.0)
+    loss.backward()
+    np.testing.assert_allclose(x.grad, 64.0)
 
 
 def test_deep_neural_network_dag_gradcheck():

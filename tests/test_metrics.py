@@ -7,6 +7,26 @@ import pytest
 
 from numpygrad.core.tensor import Tensor
 from numpygrad.metrics import accuracy, confusion_matrix
+from numpygrad.metrics import classification_metrics, stratified_indices
+
+
+def test_stratified_indices_are_reproducible_and_disjoint():
+    labels = np.repeat(np.arange(3), 20)
+    first = stratified_indices(labels, seed=42)
+    second = stratified_indices(labels, seed=42)
+    for a, b in zip(first, second):
+        np.testing.assert_array_equal(a, b)
+    assert len(np.concatenate(first)) == len(labels)
+    assert len(np.unique(np.concatenate(first))) == len(labels)
+    assert [np.bincount(labels[part], minlength=3).tolist() for part in first] == [[12, 12, 12], [4, 4, 4], [4, 4, 4]]
+
+
+def test_classification_metrics_known_perfect_predictions():
+    metrics = classification_metrics(np.array([[12.0, -12.0], [-12.0, 12.0]]), np.array([0, 1]))
+    assert metrics["accuracy"] == 1.0
+    assert metrics["macro_f1"] == 1.0
+    assert metrics["nll"] < 1e-8
+    assert metrics["brier"] < 1e-8
 
 
 def test_accuracy_2d_logits_and_tensor():

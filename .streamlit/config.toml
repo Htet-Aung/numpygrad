@@ -1,6 +1,6 @@
 [server]
 runOnSave = true
-headless = false
+headless = true
 
 [client]
 toolbarMode = "minimal"

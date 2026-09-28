@@ -180,6 +180,18 @@ def test_batchnorm1d_gradcheck():
     assert gradcheck(f, [x, bn.weight, bn.bias])
 
 
+def test_batchnorm1d_3d_forward_eval_and_gradcheck():
+    bn = nn.BatchNorm1d(3)
+    x = Tensor(np.random.randn(2, 3, 4).astype(np.float64))
+    out = bn(x)
+    assert out.shape == x.shape
+    np.testing.assert_allclose(out.data.mean(axis=(0, 2)), np.zeros(3), atol=1e-6)
+    assert bn.running_mean.shape == (3,)
+    assert gradcheck(lambda t: nn.BatchNorm1d(3)(t).sum(), [x])
+    bn.eval()
+    assert bn(x).shape == x.shape
+
+
 # -----------------------------------------------------------------------------
 # Loss Functions & Gradchecks
 # -----------------------------------------------------------------------------

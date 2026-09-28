@@ -149,11 +149,17 @@ class BatchNorm1d(Module):
         self.running_var: np.ndarray = np.ones(num_features, dtype=np.float32)
 
     def forward(self, x: Tensor) -> Tensor:
+        if x.ndim not in (2, 3) or x.shape[1] != self.num_features:
+            raise ValueError(
+                f"BatchNorm1d expects (N, {self.num_features}) or (N, {self.num_features}, L), got {x.shape}"
+            )
+        axes = (0, 2) if x.ndim == 3 else (0,)
+        stat_shape = (1, self.num_features, 1) if x.ndim == 3 else (1, self.num_features)
         if self.training:
-            # Batch statistics along axis 0
-            mean = x.mean(axis=0, keepdims=True)
+            # Normalize each channel across batch and optional sequence length.
+            mean = x.mean(axis=axes, keepdims=True)
             diff = x - mean
-            var = (diff ** 2.0).mean(axis=0, keepdims=True)
+            var = (diff ** 2.0).mean(axis=axes, keepdims=True)
 
             # Update running statistics
             batch_mean = mean.data.reshape(-1)
@@ -166,11 +172,13 @@ class BatchNorm1d(Module):
             x_norm = diff * std_inv
         else:
             # Evaluation mode using stored running statistics
-            mean_t = Tensor(self.running_mean, requires_grad=False, dtype=x.dtype)
-            var_t = Tensor(self.running_var, requires_grad=False, dtype=x.dtype)
+            mean_t = Tensor(self.running_mean.reshape(stat_shape), requires_grad=False, dtype=x.dtype)
+            var_t = Tensor(self.running_var.reshape(stat_shape), requires_grad=False, dtype=x.dtype)
             x_norm = (x - mean_t) / ((var_t + self.eps) ** 0.5)
 
         if self.affine and self.weight is not None and self.bias is not None:
+            if x.ndim == 3:
+                return x_norm * self.weight.reshape(stat_shape) + self.bias.reshape(stat_shape)
             return x_norm * self.weight + self.bias
         return x_norm
 

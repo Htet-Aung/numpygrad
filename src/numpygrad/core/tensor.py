@@ -8,21 +8,21 @@ directed acyclic graphs (DAGs) using pure NumPy.
 from __future__ import annotations
 from typing import Optional, Set, Tuple, Union, Sequence, Callable, Any
 import functools
+from contextvars import ContextVar, Token
 import numpy as np
 
 
-_grad_enabled: bool = True
+_grad_enabled: ContextVar[bool] = ContextVar("numpygrad_grad_enabled", default=True)
 
 
 def is_grad_enabled() -> bool:
     """Returns True if autograd gradient tracking is currently enabled, False otherwise."""
-    return _grad_enabled
+    return _grad_enabled.get()
 
 
 def set_grad_enabled(mode: bool) -> None:
-    """Enables or disables autograd gradient tracking globally."""
-    global _grad_enabled
-    _grad_enabled = bool(mode)
+    """Enable or disable autograd tracking in the current execution context."""
+    _grad_enabled.set(bool(mode))
 
 
 class no_grad:
@@ -48,22 +48,21 @@ class no_grad:
     """
 
     def __init__(self) -> None:
-        self.prev: bool = True
+        self._token: Optional[Token] = None
 
     def __enter__(self) -> no_grad:
-        global _grad_enabled
-        self.prev = _grad_enabled
-        _grad_enabled = False
+        self._token = _grad_enabled.set(False)
         return self
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        global _grad_enabled
-        _grad_enabled = self.prev
+        if self._token is not None:
+            _grad_enabled.reset(self._token)
+            self._token = None
 
     def __call__(self, func: Callable) -> Callable:
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
-            with self:
+            with no_grad():
                 return func(*args, **kwargs)
 
         return wrapper
@@ -78,22 +77,21 @@ class enable_grad:
     """
 
     def __init__(self) -> None:
-        self.prev: bool = True
+        self._token: Optional[Token] = None
 
     def __enter__(self) -> enable_grad:
-        global _grad_enabled
-        self.prev = _grad_enabled
-        _grad_enabled = True
+        self._token = _grad_enabled.set(True)
         return self
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        global _grad_enabled
-        _grad_enabled = self.prev
+        if self._token is not None:
+            _grad_enabled.reset(self._token)
+            self._token = None
 
     def __call__(self, func: Callable) -> Callable:
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
-            with self:
+            with enable_grad():
                 return func(*args, **kwargs)
 
         return wrapper
@@ -282,15 +280,6 @@ class Tensor:
         if not self.requires_grad:
             return
 
-        if gradient is None:
-            self.grad = np.ones_like(self.data, dtype=self.data.dtype)
-        elif isinstance(gradient, Tensor):
-            self.grad = gradient.data.astype(self.data.dtype, copy=False)
-        elif isinstance(gradient, np.ndarray):
-            self.grad = gradient.astype(self.data.dtype, copy=False)
-        else:
-            self.grad = np.full_like(self.data, fill_value=gradient, dtype=self.data.dtype)
-
         # Build topological sort DAG
         topo: list[Tensor] = []
         visited: Set[Tensor] = set()
@@ -303,6 +292,21 @@ class Tensor:
                 topo.append(v)
 
         build_topo(self)
+
+        # Intermediate gradients belong to this backward pass. Retaining them
+        # would propagate old contributions again when the graph is reused.
+        for node in topo:
+            if node._prev:
+                node.grad = None
+
+        if gradient is None:
+            self.grad = np.ones_like(self.data, dtype=self.data.dtype)
+        elif isinstance(gradient, Tensor):
+            self.grad = gradient.data.astype(self.data.dtype, copy=False)
+        elif isinstance(gradient, np.ndarray):
+            self.grad = gradient.astype(self.data.dtype, copy=False)
+        else:
+            self.grad = np.full_like(self.data, fill_value=gradient, dtype=self.data.dtype)
 
         # Propagate gradients in reverse topological order
         for node in reversed(topo):
@@ -519,7 +523,7 @@ class Tensor:
 
     def __matmul__(self, other: Union[Tensor, np.ndarray]) -> Tensor:
         """
-        Matrix multiplication: Z = X @ Y
+        Matrix multiplication: Z = X @ Y, including NumPy's vector cases.
         Analytical Gradients:
             dZ/dX = dL/dZ @ Y^T
             dZ/dY = X^T @ dL/dZ
@@ -548,14 +552,26 @@ class Tensor:
         def _backward() -> None:
             if out.grad is None:
                 return
+            a = self.data[np.newaxis, :] if self.ndim == 1 else self.data
+            b = other.data[:, np.newaxis] if other.ndim == 1 else other.data
+            if self.ndim == 1 and other.ndim == 1:
+                grad_out = np.reshape(out.grad, (1, 1))
+            elif self.ndim == 1:
+                grad_out = np.expand_dims(out.grad, -2)
+            elif other.ndim == 1:
+                grad_out = np.expand_dims(out.grad, -1)
+            else:
+                grad_out = out.grad
             if self.requires_grad:
-                other_t = np.swapaxes(other.data, -1, -2) if other.ndim >= 2 else other.data.T
-                gx = np.matmul(out.grad, other_t)
+                gx = np.matmul(grad_out, np.swapaxes(b, -1, -2))
+                if self.ndim == 1:
+                    gx = np.squeeze(gx, axis=-2)
                 gx = _unbroadcast(gx, self.shape)
                 self.grad = gx if self.grad is None else self.grad + gx
             if other.requires_grad:
-                self_t = np.swapaxes(self.data, -1, -2) if self.ndim >= 2 else self.data.T
-                gy = np.matmul(self_t, out.grad)
+                gy = np.matmul(np.swapaxes(a, -1, -2), grad_out)
+                if other.ndim == 1:
+                    gy = np.squeeze(gy, axis=-1)
                 gy = _unbroadcast(gy, other.shape)
                 other.grad = gy if other.grad is None else other.grad + gy
 

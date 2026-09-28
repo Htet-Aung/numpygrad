@@ -10,6 +10,8 @@ htmlcov/
 
 # Environments & IDEs
 .venv/
+.dev-deps/
+.cache/
 env/
 venv/
 ENV/

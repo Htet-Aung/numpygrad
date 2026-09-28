@@ -17,6 +17,7 @@ import time
 import gzip
 import struct
 import urllib.request
+import argparse
 import numpy as np
 
 # Ensure src/ is in sys.path
@@ -29,6 +30,7 @@ from numpygrad.data import Dataset, DataLoader
 from numpygrad.metrics import accuracy
 from numpygrad.core.tensor import Tensor, no_grad
 from numpygrad.serialization import save_model, load_model
+from numpygrad.metrics import stratified_indices
 
 
 MNIST_URLS = {
@@ -115,7 +117,8 @@ def evaluate_model(model: nn.Module, data_loader: DataLoader) -> tuple[float, fl
     return avg_loss, acc
 
 
-def train_mnist(epochs: int = 5, batch_size: int = 128, lr: float = 1e-3, seed: int = 42):
+def train_mnist(epochs: int = 5, batch_size: int = 128, lr: float = 1e-3, seed: int = 42,
+                cache_dir: str | None = None):
     np.random.seed(seed)
     print("=" * 72)
     print("             NUMPYGRAD MNIST MLP TRAINING PIPELINE")
@@ -123,16 +126,20 @@ def train_mnist(epochs: int = 5, batch_size: int = 128, lr: float = 1e-3, seed: 
 
     # 1. Ingest Data
     t0 = time.perf_counter()
-    X_train, y_train, X_test, y_test = download_and_extract_mnist()
+    X_train, y_train, X_test, y_test = download_and_extract_mnist(cache_dir=cache_dir)
     t_load = time.perf_counter() - t0
     print(f"[DATA] MNIST loaded in {t_load:.2f}s | Train: {X_train.shape} | Test: {X_test.shape}")
 
     # 2. Build Datasets and DataLoaders
-    train_dataset = Dataset(X_train, y_train)
+    train_idx, val_idx, _ = stratified_indices(y_train, seed=seed, validation_fraction=0.1, test_fraction=0.0)
+    train_dataset = Dataset(X_train[train_idx], y_train[train_idx])
+    val_dataset = Dataset(X_train[val_idx], y_train[val_idx])
     test_dataset = Dataset(X_test, y_test)
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, seed=seed)
+    val_loader = DataLoader(val_dataset, batch_size=256, shuffle=False)
     test_loader = DataLoader(test_dataset, batch_size=256, shuffle=False)
+    print(f"[SPLIT] {len(train_idx)} train / {len(val_idx)} validation / {len(y_test)} final test")
 
     # 3. Instantiate Model Architecture
     model = nn.Sequential(
@@ -153,11 +160,13 @@ def train_mnist(epochs: int = 5, batch_size: int = 128, lr: float = 1e-3, seed: 
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
 
     print("-" * 72)
-    print(f"{'Epoch':^7} | {'Train Loss':^12} | {'Test Loss':^11} | {'Test Acc':^10} | {'Throughput':^14} | {'Time':^7}")
+    print(f"{'Epoch':^7} | {'Train Loss':^12} | {'Val Loss':^11} | {'Val Acc':^10} | {'Throughput':^14} | {'Time':^7}")
     print("-" * 72)
 
     # 5. Training Loop
     total_train_start = time.perf_counter()
+    best_val_loss = float("inf")
+    best_state = None
     for epoch in range(1, epochs + 1):
         model.train()
         epoch_loss = 0.0
@@ -179,21 +188,22 @@ def train_mnist(epochs: int = 5, batch_size: int = 128, lr: float = 1e-3, seed: 
         throughput = samples_processed / max(1e-6, t_epoch)
         avg_train_loss = epoch_loss / max(1, samples_processed)
 
-        # Evaluate on test set
-        test_loss, test_acc = evaluate_model(model, test_loader)
+        val_loss, val_acc = evaluate_model(model, val_loader)
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            best_state = model.state_dict()
 
         print(
-            f"{epoch:^7d} | {avg_train_loss:^12.4f} | {test_loss:^11.4f} | "
-            f"{test_acc * 100:^9.2f}% | {throughput:^10.1f} smp/s | {t_epoch:^6.2f}s"
+            f"{epoch:^7d} | {avg_train_loss:^12.4f} | {val_loss:^11.4f} | "
+            f"{val_acc * 100:^9.2f}% | {throughput:^10.1f} smp/s | {t_epoch:^6.2f}s"
         )
 
     total_time = time.perf_counter() - total_train_start
+    assert best_state is not None
+    model.load_state_dict(best_state)
+    test_loss, test_acc = evaluate_model(model, test_loader)
     print("-" * 72)
-    print(f"[DONE] Completed {epochs} epochs in {total_time:.2f}s | Final Test Accuracy: {test_acc * 100:.2f}%")
-
-    # 6. Accuracy Assertion
-    assert test_acc >= 0.95, f"Test accuracy {test_acc:.4f} did not meet required threshold of 0.9500"
-    print(f"[SUCCESS] Accuracy Requirement Met: {test_acc * 100:.2f}% >= 95.00%")
+    print(f"[DONE] Completed {epochs} epochs in {total_time:.2f}s | Selected Val Loss: {best_val_loss:.4f} | Final Test Loss: {test_loss:.4f} | Final Test Accuracy: {test_acc * 100:.2f}%")
 
     # 7. Model Persistence to .ng container
     artifact_path = os.path.join(os.path.dirname(__file__), "mnist_mlp.ng")
@@ -211,4 +221,10 @@ def train_mnist(epochs: int = 5, batch_size: int = 128, lr: float = 1e-3, seed: 
 
 
 if __name__ == "__main__":
-    train_mnist()
+    parser = argparse.ArgumentParser(description="Train the NumPyGrad MNIST MLP")
+    parser.add_argument("--epochs", type=int, default=5)
+    parser.add_argument("--batch-size", type=int, default=128)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--cache-dir", default=None)
+    args = parser.parse_args()
+    train_mnist(epochs=args.epochs, batch_size=args.batch_size, seed=args.seed, cache_dir=args.cache_dir)

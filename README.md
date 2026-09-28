@@ -2,17 +2,27 @@
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![Dependencies: Pure NumPy](https://img.shields.io/badge/Dependencies-Pure%20NumPy-brightgreen.svg)](#)
-[![Tests: 129/129 Passed](https://img.shields.io/badge/Tests-129%2F129%20Passed-success.svg)](#)
+[![Tests](https://github.com/Htet-Aung/numpygrad/actions/workflows/tests.yml/badge.svg)](https://github.com/Htet-Aung/numpygrad/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Release: v1.0.0](https://img.shields.io/badge/Release-v1.0.0-blue.svg)](https://github.com/Htet-Aung/numpygrad)
 
-**NumPyGrad** is an educational deep learning and reverse-mode automatic differentiation framework written completely from scratch in **pure Python and NumPy**, with **zero external deep learning framework dependencies** (no PyTorch, JAX, TensorFlow, or compiled C++ extensions).
+**NumPyGrad** is a deep learning and reverse-mode automatic differentiation framework built from scratch with Python and NumPy. I built it as an Applied AI and Data Analytics side project to understand gradient computation, model training, and evaluation by implementing each part myself. The optional Streamlit studio turns those ideas into interactive experiments.
 
-Designed for mathematical clarity and architectural transparency, NumPyGrad demystifies how modern autograd engines and deep neural networks operate under the hood—from dynamic computation graph construction, topological sorting, and broadcasting-aware gradient reduction to vectorized 2D convolutions, spatial pooling, and adaptive optimizers.
+**Try the studio locally:** From the repository root, run `pip install -e ".[app]"` then `streamlit run app/app.py`. The MNIST drawing demo loads a committed model; the 2D and rover views train small models in your session. See [deployment steps](docs/DEPLOYMENT.md) if you want to host it.
 
-The framework features two flagship interactive showcase applications within the built-in Streamlit Studio:
-1. **2D Decision Boundary Explorer:** Real-time neural network training on non-linear synthetic manifolds (Two Moons, Circles, Spirals), interactive gold-star click-to-predict inference, side-by-side model capacity comparisons, and step-by-step computation trace inspection.
-2. **Live Handwritten Digit Recognition Canvas:** Real-time MNIST drawing canvas with brush width controls, connected-component segmentation for multi-digit sequences, and live Plotly class probability distributions.
+**Live demo:** Coming soon. This link will be added after deployment.
+
+**Measured result:** A reproducible [known-wall study](docs/NAVIGATION_STUDY.md) trained 60 classifiers across ten seeds, two widths, and three training-noise levels, then evaluated 120 rover routes against the true obstacle map. Wider models improved mean held-out accuracy, but accuracy alone did not guarantee a safe route. The [per-run data](docs/results/navigation_study.csv) and [plot](docs/results/navigation_study.png) are included. The study uses a separate known-wall map, not the studio's corridor preset.
+
+The committed MNIST examples reached **97.16% test accuracy with an MLP** and **98.04% with a CNN** on the 10,000-image test set, using validation-selected checkpoints. These are single-seed results; the training details are [below](#reproducing-examples--benchmarks).
+
+![Held-out classification accuracy and collision-free route success across the known-wall study](docs/results/navigation_study.png)
+
+The project demonstrates dynamic graph construction, analytical backpropagation, gradient checking, model serialization, validation-based checkpoint selection, and measured downstream behavior. The core library does not use PyTorch, TensorFlow, JAX, or another automatic differentiation framework.
+
+The Streamlit Studio has three interactive views:
+1. **2D Decision Boundary Explorer:** Train on synthetic datasets, inspect held-out results and validation mistakes, compare model capacities, and test coordinates on the learned boundary.
+2. **Autonomous Neural Pathfinding:** Drive a rover using a learned obstacle-risk map and compare navigation outcomes across models. The accompanying known-wall study measures how classification quality relates to route success.
+3. **Handwritten Digit Recognition:** Draw one or more digits, inspect the segmented inputs, and view the model's softmax scores. These scores are not calibrated probabilities.
 
 ---
 
@@ -60,7 +70,7 @@ NumPyGrad trains multi-layer perceptrons to resolve complex non-linear classific
   - `AdamW`: Adaptive moment estimation with first and second moment bias correction and decoupled weight decay.
 
 ### 4. Single-File Persistence (`.ng` Format)
-- Robust, uncorruptible container serialization storing both network architecture and parameter weights in a single `.ng` archive:
+- Single-file container serialization storing model architecture and parameter weights in a `.ng` archive:
   - `architecture.json`: Complete layer hierarchy, types, hyperparameters, and topology layout.
   - `weights.npz`: Compressed parameter tensors and non-trainable buffers.
 - Unified API: `model.save("model.ng")`, `save_model(model, filepath)`, and `load_model(filepath)`.
@@ -88,6 +98,10 @@ To include optional dependencies for the interactive Streamlit Studio:
 ```bash
 pip install -e ".[app]"
 ```
+
+For development and tests, use `pip install -e ".[app,dev]"`. `requirements.txt` contains the deployment app dependencies. The package requires Python 3.10 or newer. On Windows, `dev.bat` and `dev.ps1` use the active Python environment.
+
+The live demonstration is organized as a short tour: train one 2D classifier and inspect its validation mistakes; compare two capacities on the same data split; launch the rover using the learned risk map; then draw one or more digits in the MNIST canvas. The rover tab also links to the measured [navigation study](docs/NAVIGATION_STUDY.md). [Deployment steps](docs/DEPLOYMENT.md) are provided for Streamlit Community Cloud.
 
 ---
 
@@ -152,6 +166,8 @@ reloaded_model = load_model("conv_model.ng")
 
 ## Interactive Studio (Streamlit Dashboard)
 
+**Screenshot placeholders:** Updated images of the 2D studio, rover, and MNIST canvas will be added after the final UI review.
+
 Launch the interactive web studio for real-time visualization and tactile experimentation:
 
 ```bash
@@ -165,25 +181,13 @@ streamlit run app/app.py
 ```
 
 ### 1. 2D Decision Boundary Studio & Live Convergence
-Live training on non-linear synthetic manifolds (Two Moons, Circles, Spirals, Corridor Maze) with full-span decision contours, smooth probability surface rendering, real-time loss and accuracy convergence curves, and direct **Click-to-Predict** coordinate inference with active gold star markers.
-
-<p align="center">
-  <img src="examples/studio_decision_boundary.png" alt="NumPyGrad 2D Decision Boundary Studio" width="850"/>
-</p>
+Live training on geometric presets (Island in Moat, Checkerboard XOR, Corridor Maze, Double Cross, Spirals) or user-drawn points, with decision contours, train-loss and validation-accuracy curves, a held-out test report, and direct **Click-to-Predict** coordinate inference. Preset experiments use stratified 80/10/10 train/validation/test splits and retain the checkpoint with the lowest validation loss. The corridor split also balances broad map regions so a missed channel is less likely to disappear from evaluation.
 
 ### 2. Autonomous Neural Pathfinding & Obstacle Avoidance
 Interactive robotics simulator where learned neural classification boundaries act as **dynamic artificial potential fields**. The rover emits multi-angle sensory rays to detect boundary hazards in real time, steering smoothly around obstacles with tangential wall-following to reach destination targets.
 
-<p align="center">
-  <img src="examples/studio_neural_pathfinding.png" alt="NumPyGrad Autonomous Neural Pathfinding" width="850"/>
-</p>
-
 ### 3. Live Handwritten Digit Recognition Canvas
-Interactive drawing canvas with customizable brush width and native stroke history controls (Undo, Redo, Clear). Features pure NumPy connected-component segmentation to recognize multi-digit sequences (e.g. sequence `"67"` with per-digit bounding boxes and position confidence breakdowns) as well as single digits, evaluating real-time inference against pre-trained MNIST models (`examples/mnist_mlp.ng`) with interactive Plotly probability distributions.
-
-<p align="center">
-  <img src="examples/studio_mnist_canvas.png" alt="NumPyGrad MNIST Multi-Digit Drawing Canvas" width="850"/>
-</p>
+Interactive drawing canvas with customizable brush width and stroke history controls (Undo, Redo, Clear). Connected-component segmentation, with a NumPy fallback, recognizes separated multi-digit sequences as well as single digits. The pre-trained MLP (`examples/mnist_mlp.ng`) shows per-digit softmax scores; these scores are not calibrated probabilities.
 
 ---
 
@@ -193,40 +197,30 @@ NumPyGrad includes standalone reproduction scripts for standard datasets and ben
 
 ```bash
 # 1. Train Synthetic 2D Decision Boundaries (Two Moons, Circles, Spirals)
-py -3.13 examples/train_synthetic_2d.py
+python examples/train_synthetic_2d.py
 
 # 2. Train Multi-Class Iris Tabular Classifier (>96% Accuracy)
-py -3.13 examples/train_iris.py
+python examples/train_iris.py
 
-# 3. Train Flagship MNIST Multi-Layer Perceptron (97.55% Test Accuracy)
-py -3.13 examples/train_mnist_mlp.py
+# 3. Train MNIST Multi-Layer Perceptron with validation checkpoint selection
+python examples/train_mnist_mlp.py
 
-# 4. Train Flagship MNIST Convolutional Neural Network (98.35% Test Accuracy)
-py -3.13 examples/train_mnist_cnn.py
+# 4. Train MNIST Convolutional Neural Network with validation checkpoint selection
+python examples/train_mnist_cnn.py
 
 # 5. Run CPU Micro-Benchmark vs. PyTorch C++ Engine
-py -3.13 benchmarks/benchmark_cpu.py
+python benchmarks/benchmark_cpu.py
 ```
 
-### Benchmark Summary (MNIST Classification)
+The committed MNIST artifacts were retrained with a stratified 54,001/5,999 split of the 60,000 training images. The best validation-loss checkpoint was evaluated once on the 10,000-image test set, then saved and reloaded to verify the result. With seed 42, the 109,386-parameter MLP reached **97.16%** test accuracy after five epochs; the 52,138-parameter CNN reached **98.04%** after three epochs. These are single-seed results, not estimates of run-to-run variation. The CPU benchmark is optional and reports measurements from your machine when invoked. PyTorch is needed only for that optional comparison.
 
-| Model Architecture | Parameters | Parameter Reduction | Test Accuracy | Step Latency (B=128) |
-|---|---|---|---|---|
-| **MLP Baseline** | 109,386 | Baseline | 97.55% | ~15.6 ms |
-| **NumPyGrad CNN** | 52,138 | **-52.3%** | **98.35%** | ~173.2 ms |
-
-### CPU Throughput: Pure NumPy vs. PyTorch C++ (3-Layer MLP, B=128)
-
-| Engine | Backend | Step Latency (Fwd + Bwd) | Throughput |
-|---|---|---|---|
-| **NumPyGrad** | Pure Python + NumPy | **2.21 ms** | **~58,000 samples/sec** |
-| **PyTorch** | Native C++ (LibTorch CPU) | **1.85 ms** | **~69,000 samples/sec** |
+The reproducible navigation study is the current measured result. Its protocol, per-run data, mean and variation, and limitations are documented in [docs/NAVIGATION_STUDY.md](docs/NAVIGATION_STUDY.md).
 
 ---
 
 ## Automated Testing & Gradient Verification
 
-Run the complete test suite with 100% passing test coverage:
+Run the complete test suite:
 
 ```bash
 pytest -v
@@ -234,13 +228,13 @@ pytest -v
 
 Or via Python 3.13:
 ```bash
-py -3.13 -m pytest -v
+python -m pytest -v
 ```
 
 To run standalone numerical finite-difference checks on all layers:
 
 ```bash
-py -3.13 .agents/skills/gradcheck-verifier/scripts/verify_grad.py --layer all
+python .agents/skills/gradcheck-verifier/scripts/verify_grad.py --layer all
 ```
 
 ---

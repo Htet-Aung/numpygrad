@@ -7,13 +7,13 @@ name = "numpygrad"
 version = "1.0.0"
 description = "A modular, educational deep learning library and dynamic tensor autograd engine built completely from scratch using pure Python and NumPy."
 readme = "README.md"
-license = { text = "MIT" }
+license = { file = "LICENSE" }
 requires-python = ">=3.10"
 authors = [
     { name = "NumPyGrad Contributors" }
 ]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: Education",
     "Intended Audience :: Science/Research",
@@ -32,11 +32,11 @@ dependencies = [
 
 [project.optional-dependencies]
 app = [
-    "streamlit>=1.30.0",
-    "streamlit-drawable-canvas>=0.9.0",
+    "streamlit>=1.64.0,<2",
+    "streamlit-drawable-canvas>=0.13.0,<0.14",
     "matplotlib>=3.7.0",
-    "scikit-learn>=1.2.0",
     "plotly>=5.18.0",
+    "pillow>=9.5.0",
 ]
 dev = [
     "pytest>=7.0.0",

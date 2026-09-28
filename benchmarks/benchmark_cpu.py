@@ -8,6 +8,7 @@ between NumPyGrad (Pure NumPy) and PyTorch (CPU) on identical MLP architectures.
 import sys
 import os
 import time
+import platform
 from typing import Dict, Any, List
 
 # Ensure src/ is on path
@@ -133,8 +134,9 @@ def run_pytorch_benchmark(
         return {}
 
     torch.manual_seed(42)
-    X_torch = torch.randn(batch_size, in_features, dtype=torch.float32)
-    y_torch = torch.randint(0, out_features, (batch_size,), dtype=torch.long)
+    rng = np.random.RandomState(42)
+    X_torch = torch.from_numpy(rng.randn(batch_size, in_features).astype(np.float32).copy())
+    y_torch = torch.from_numpy(rng.randint(0, out_features, size=(batch_size,)).astype(np.int64).copy())
 
     model = torch_nn.Sequential(
         torch_nn.Linear(in_features, hidden_dim),
@@ -244,6 +246,10 @@ def print_comparison_table(res_numpygrad: Dict[str, Any], res_pytorch: Dict[str,
 
 
 def main():
+    print(f"[ENV] Python {sys.version.split()[0]} | NumPy {np.__version__} | {platform.platform()}")
+    if TORCH_AVAILABLE:
+        print(f"[ENV] PyTorch {torch.__version__} | torch CPU threads {torch.get_num_threads()}")
+    print(f"[ENV] OPENBLAS_NUM_THREADS={os.environ.get('OPENBLAS_NUM_THREADS', 'default')} | seed=42 | warmup=20 | timed steps=100")
     print("[BENCHMARK] Executing NumPyGrad CPU benchmark...")
     res_ng = run_numpygrad_benchmark()
 

@@ -64,8 +64,8 @@ This document tracks development progress across all phases and milestones for *
 - [x] Implement classification evaluation metrics (`accuracy`, `confusion_matrix`) in `src/numpygrad/metrics/` `[DONE]`
 - [x] Implement synthetic 2D decision boundary training pipeline in `examples/train_synthetic_2d.py` (Two Moons, Circles, Spirals) `[DONE]`
 - [x] Implement Iris multi-class tabular classification in `examples/train_iris.py` achieving >96% accuracy `[DONE]`
-- [x] Implement flagship MNIST MLP training pipeline in `examples/train_mnist_mlp.py` achieving 97.55% test accuracy and saving `examples/mnist_mlp.ng` `[DONE]`
-- [x] Implement flagship MNIST CNN training pipeline in `examples/train_mnist_cnn.py` achieving 98.35% test accuracy with 52.3% fewer parameters `[DONE]`
+- [x] Implement MNIST MLP training pipeline in `examples/train_mnist_mlp.py`; latest validation-selected artifact reached 97.16% test accuracy `[DONE]`
+- [x] Implement MNIST CNN training pipeline in `examples/train_mnist_cnn.py`; latest validation-selected artifact reached 98.04% test accuracy with 52.3% fewer parameters `[DONE]`
 - [x] Comprehensive tests in `tests/test_training_infra.py`, `tests/test_serialization.py`, and `tests/test_metrics.py` `[DONE]`
 
 ---
@@ -80,4 +80,19 @@ This document tracks development progress across all phases and milestones for *
 - [x] Configure hot-reloading in `.streamlit/config.toml` and single-click startup runners (`dev.bat`, `dev.ps1`) `[DONE]`
 - [x] Packaging configuration in `pyproject.toml` supporting editable installation (`pip install -e .`) and app extras (`pip install -e ".[app]"`) `[DONE]`
 - [x] Master documentation (`README.md`, `docs/PRD.md`, `docs/TASK_PROGRESS.md`) updated and verified `[DONE]`
-- [x] Full test suite passing with 100% success rate (**143/143 passed**) `[DONE]`
+- [x] Original phase 4 test suite passing (`143 passed` at baseline) `[DONE]`
+
+---
+
+### Phase 5: Portfolio Validation and Measured Study
+- [x] Fix vector matmul gradients, reusable backward graphs, and 3D BatchNorm1d; add focused gradchecks `[DONE]`
+- [x] Add stratified splits and classification quality metrics to the 2D studio `[DONE]`
+- [x] Run a 10-seed known-wall classification and rover study with per-run artifacts and a true-map reference `[DONE]`
+- [x] Select MNIST checkpoints with validation loss and evaluate test data after selection `[DONE]`
+- [x] Add CI, correct packaging metadata, and create an MIT license `[DONE]`
+- [x] Update documentation and reproduce model results `[DONE]`
+- [ ] Keep the MNIST canvas seed fixed during drawing so new strokes and toolbar history persist `[IN PROGRESS]`
+- [ ] Add a rover mission clear button for single and dual runs `[IN PROGRESS]`
+- [ ] Restore reliable corridor training with fresh preset samples, a larger training split, validation-selected checkpoints, and a stable default learning rate `[IN PROGRESS]`
+- [ ] Replace outdated studio screenshots after user verification and add a published demo link to the README `[IN PROGRESS]`
+- [ ] Complete final user-run playground checks and verify the published deployment `[IN PROGRESS]`

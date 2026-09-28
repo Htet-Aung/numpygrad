@@ -5,6 +5,7 @@ Dataset, DataLoader, Module train/eval modes, and no_grad context manager.
 
 import numpy as np
 import pytest
+from threading import Event, Thread
 from numpygrad.core.tensor import (
     Tensor,
     no_grad,
@@ -429,6 +430,28 @@ def test_nested_no_grad_and_enable_grad():
 
 def test_no_grad_restores_on_exception():
     assert is_grad_enabled() is True
+
+
+def test_no_grad_is_isolated_between_threads():
+    entered = Event()
+    leave = Event()
+    result = []
+
+    def worker():
+        with no_grad():
+            result.append(is_grad_enabled())
+            entered.set()
+            leave.wait(timeout=5)
+
+    thread = Thread(target=worker)
+    thread.start()
+    try:
+        assert entered.wait(timeout=5)
+        assert is_grad_enabled() is True
+        assert result == [False]
+    finally:
+        leave.set()
+        thread.join(timeout=5)
     try:
         with no_grad():
             assert is_grad_enabled() is False
@@ -527,7 +550,7 @@ def test_canonical_training_and_evaluation_pipeline():
 
 def test_studio_2d_dataset_generator():
     from app.app import generate_dataset
-    for dataset_name in ["Two Moons", "Concentric Circles", "Spirals"]:
+    for dataset_name in ["Two Moons", "Concentric Circles", "Spirals", "Corridor Maze", "Checkerboard XOR"]:
         X, y = generate_dataset(dataset_name, n_samples=200, noise=0.1, random_state=42)
         assert X.shape == (200, 2)
         assert y.shape == (200,)

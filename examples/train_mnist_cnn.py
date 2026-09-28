@@ -15,6 +15,7 @@ import time
 import gzip
 import struct
 import urllib.request
+import argparse
 import numpy as np
 
 # Ensure src/ is in sys.path
@@ -27,6 +28,7 @@ from numpygrad.data import Dataset, DataLoader
 from numpygrad.metrics import accuracy
 from numpygrad.core.tensor import Tensor, no_grad
 from numpygrad.serialization import save_model, load_model
+from numpygrad.metrics import stratified_indices
 
 
 MNIST_URLS = {
@@ -146,7 +148,8 @@ def measure_step_latency(model: nn.Module, sample_batch: Tensor, targets: np.nda
     return t_fwd, max(0.0, t_bwd)
 
 
-def train_mnist_cnn(epochs: int = 3, batch_size: int = 128, lr: float = 1e-3, seed: int = 42):
+def train_mnist_cnn(epochs: int = 3, batch_size: int = 128, lr: float = 1e-3, seed: int = 42,
+                    cache_dir: str | None = None):
     np.random.seed(seed)
     print("=" * 80)
     print("             NUMPYGRAD CONVOLUTIONAL NEURAL NETWORK (CNN) PIPELINE")
@@ -154,16 +157,20 @@ def train_mnist_cnn(epochs: int = 3, batch_size: int = 128, lr: float = 1e-3, se
 
     # 1. Ingest Data
     t0 = time.perf_counter()
-    X_train, y_train, X_test, y_test = download_and_extract_mnist()
+    X_train, y_train, X_test, y_test = download_and_extract_mnist(cache_dir=cache_dir)
     t_load = time.perf_counter() - t0
     print(f"[DATA] MNIST loaded in {t_load:.2f}s | Train: {X_train.shape} | Test: {X_test.shape}")
 
     # Build Datasets and DataLoaders
-    train_dataset = Dataset(X_train, y_train)
+    train_idx, val_idx, _ = stratified_indices(y_train, seed=seed, validation_fraction=0.1, test_fraction=0.0)
+    train_dataset = Dataset(X_train[train_idx], y_train[train_idx])
+    val_dataset = Dataset(X_train[val_idx], y_train[val_idx])
     test_dataset = Dataset(X_test, y_test)
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, seed=seed)
+    val_loader = DataLoader(val_dataset, batch_size=256, shuffle=False)
     test_loader = DataLoader(test_dataset, batch_size=256, shuffle=False)
+    print(f"[SPLIT] {len(train_idx)} train / {len(val_idx)} validation / {len(y_test)} final test")
 
     # 2. Instantiate CNN Architecture
     # Input: (B, 1, 28, 28)
@@ -198,11 +205,13 @@ def train_mnist_cnn(epochs: int = 3, batch_size: int = 128, lr: float = 1e-3, se
     print(f"[LATENCY] CNN Step Time (batch={batch_size}): Forward {cnn_fwd_ms:.2f}ms | Backward {cnn_bwd_ms:.2f}ms | Total {cnn_fwd_ms + cnn_bwd_ms:.2f}ms")
 
     print("-" * 80)
-    print(f"{'Epoch':^7} | {'Train Loss':^12} | {'Test Loss':^11} | {'Test Acc':^10} | {'Throughput':^14} | {'Time':^7}")
+    print(f"{'Epoch':^7} | {'Train Loss':^12} | {'Val Loss':^11} | {'Val Acc':^10} | {'Throughput':^14} | {'Time':^7}")
     print("-" * 80)
 
     # 5. Training Loop
     total_train_start = time.perf_counter()
+    best_val_loss = float("inf")
+    best_state = None
     for epoch in range(1, epochs + 1):
         cnn_model.train()
         epoch_loss = 0.0
@@ -224,17 +233,22 @@ def train_mnist_cnn(epochs: int = 3, batch_size: int = 128, lr: float = 1e-3, se
         throughput = samples_processed / max(1e-6, t_epoch)
         avg_train_loss = epoch_loss / max(1, samples_processed)
 
-        # Evaluate on test set
-        test_loss, test_acc = evaluate_model(cnn_model, test_loader)
+        val_loss, val_acc = evaluate_model(cnn_model, val_loader)
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            best_state = cnn_model.state_dict()
 
         print(
-            f"{epoch:^7d} | {avg_train_loss:^12.4f} | {test_loss:^11.4f} | "
-            f"{test_acc * 100:^9.2f}% | {throughput:^10.1f} smp/s | {t_epoch:^6.2f}s"
+            f"{epoch:^7d} | {avg_train_loss:^12.4f} | {val_loss:^11.4f} | "
+            f"{val_acc * 100:^9.2f}% | {throughput:^10.1f} smp/s | {t_epoch:^6.2f}s"
         )
 
     total_time = time.perf_counter() - total_train_start
+    assert best_state is not None
+    cnn_model.load_state_dict(best_state)
+    test_loss, test_acc = evaluate_model(cnn_model, test_loader)
     print("-" * 80)
-    print(f"[DONE] Completed {epochs} epochs in {total_time:.2f}s | Final CNN Test Accuracy: {test_acc * 100:.2f}%")
+    print(f"[DONE] Completed {epochs} epochs in {total_time:.2f}s | Selected Val Loss: {best_val_loss:.4f} | Final Test Loss: {test_loss:.4f} | Final Test Accuracy: {test_acc * 100:.2f}%")
 
     # 6. Benchmark Comparison with MLP
     mlp_model = nn.Sequential(
@@ -256,7 +270,9 @@ def train_mnist_cnn(epochs: int = 3, batch_size: int = 128, lr: float = 1e-3, se
     print("-" * 80)
     print(f"{'Trainable Parameters':<30} | {mlp_params:<22,} | {cnn_params:<20,}")
     print(f"{'Parameter Reduction':<30} | {'Baseline':<22} | {f'-{(1 - cnn_params / mlp_params)*100:.1f}%':<20}")
-    print(f"{'Test Accuracy':<30} | {'97.55%':<22} | {f'{test_acc * 100:.2f}%':<20}")
+    mlp_artifact = os.path.join(os.path.dirname(__file__), "mnist_mlp.ng")
+    mlp_test_acc = evaluate_model(load_model(mlp_artifact), test_loader)[1] if os.path.exists(mlp_artifact) else None
+    print(f"{'Test Accuracy':<30} | {(f'{mlp_test_acc * 100:.2f}%' if mlp_test_acc is not None else 'N/A'):<22} | {f'{test_acc * 100:.2f}%':<20}")
     print(f"{'Forward Step Latency':<30} | {f'{mlp_fwd_ms:.2f} ms':<22} | {f'{cnn_fwd_ms:.2f} ms':<20}")
     print(f"{'Backward Step Latency':<30} | {f'{mlp_bwd_ms:.2f} ms':<22} | {f'{cnn_bwd_ms:.2f} ms':<20}")
     print(f"{'Total Step Latency':<30} | {f'{mlp_fwd_ms + mlp_bwd_ms:.2f} ms':<22} | {f'{cnn_fwd_ms + cnn_bwd_ms:.2f} ms':<20}")
@@ -278,4 +294,10 @@ def train_mnist_cnn(epochs: int = 3, batch_size: int = 128, lr: float = 1e-3, se
 
 
 if __name__ == "__main__":
-    train_mnist_cnn()
+    parser = argparse.ArgumentParser(description="Train the NumPyGrad MNIST CNN")
+    parser.add_argument("--epochs", type=int, default=3)
+    parser.add_argument("--batch-size", type=int, default=128)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--cache-dir", default=None)
+    args = parser.parse_args()
+    train_mnist_cnn(epochs=args.epochs, batch_size=args.batch_size, seed=args.seed, cache_dir=args.cache_dir)

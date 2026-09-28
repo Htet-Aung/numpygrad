@@ -144,7 +144,8 @@ numpygrad/
 
 2. **Numerical Stability Guarantee**:
    - Log-Sum-Exp reduction for all Softmax and Cross-Entropy operations to prevent exponential overflow/underflow.
-   - Numerically stable sigmoid formulation with strict gradient clipping.
+   - Numerically stable sigmoid formulation.
 
-3. **100% Test Coverage & Determinism**:
-   - Complete automated test suite covering autograd, operators, layers, serialization, data loading, gradient telemetry, multi-digit segmentation, and neural pathfinding simulation (**143/143 passing**).
+3. **Tests & Determinism**:
+   - The automated test suite covers autograd, operators, layers, serialization, data loading, gradient telemetry, multi-digit segmentation, and neural pathfinding simulation. Test pass counts and code coverage are distinct measures; the current count is reported by CI.
+   - Current measured navigation work and its evaluation limitations are documented in `docs/NAVIGATION_STUDY.md`.
