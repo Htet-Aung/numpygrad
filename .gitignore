@@ -3,23 +3,64 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Pytest & Coverage
+# Distribution / packaging / build artifacts
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+
+# Pytest, coverage & linters
 .pytest_cache/
 .coverage
+.coverage.*
 htmlcov/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.hypothesis/
 
-# Environments & IDEs
+# Virtual environments
 .venv/
+venv/
+env/
+ENV/
 .dev-deps/
 .cache/
-env/
-venv/
-ENV/
+
+# Agentic / AI workflows & assistant files
+.agents/
+.gemini/
+.claude/
+.cursor/
+.cursorrules
+.windsurf/
+.copilot/
+.aider*
+.cline/
+.roo/
+scratch/
+
+# IDEs & editors
 .idea/
 .vscode/
 *.swp
 *.swo
+*~
+*.sublime-project
+*.sublime-workspace
 
-# OS artifacts
+# Environment variables & secrets
+.env
+.env.*
+*.env
+.streamlit/secrets.toml
+
+# OS & temporary files
 .DS_Store
 Thumbs.db
+desktop.ini
+*.log
+*.tmp
+*.bak

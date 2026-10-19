@@ -99,7 +99,7 @@ To include optional dependencies for the interactive Streamlit Studio:
 pip install -e ".[app]"
 ```
 
-For development and tests, use `pip install -e ".[app,dev]"`. `requirements.txt` contains the deployment app dependencies. The package requires Python 3.10 or newer. On Windows, `dev.bat` and `dev.ps1` use the active Python environment.
+For development and tests, use `pip install -e ".[app,dev]"`. `requirements.txt` contains the deployment app dependencies. The package requires Python 3.10 or newer. On Windows, `dev.bat` uses the active Python environment.
 
 The live demonstration is organized as a short tour: train one 2D classifier and inspect its validation mistakes; compare two capacities on the same data split; launch the rover using the learned risk map; then draw one or more digits in the MNIST canvas. The rover tab also links to the measured [navigation study](docs/NAVIGATION_STUDY.md). [Deployment steps](docs/DEPLOYMENT.md) are provided for Streamlit Community Cloud.
 
@@ -171,10 +171,8 @@ reloaded_model = load_model("conv_model.ng")
 Launch the interactive web studio for real-time visualization and tactile experimentation:
 
 ```bash
-# Launch via one-click runner (Windows Batch / PowerShell)
+# Launch via one-click runner (Windows)
 .\dev.bat
-# or
-.\dev.ps1
 
 # Or run standard Streamlit CLI
 streamlit run app/app.py
@@ -234,7 +232,7 @@ python -m pytest -v
 To run standalone numerical finite-difference checks on all layers:
 
 ```bash
-python .agents/skills/gradcheck-verifier/scripts/verify_grad.py --layer all
+python scripts/verify_grad.py --layer all
 ```
 
 ---

@@ -14,7 +14,7 @@ import numpy as np
 # Ensure src/ is in sys.path
 import os
 current_dir = os.path.dirname(os.path.abspath(__file__))
-repo_root = os.path.abspath(os.path.join(current_dir, "../../../.."))
+repo_root = os.path.abspath(os.path.join(current_dir, ".."))
 src_dir = os.path.join(repo_root, "src")
 if src_dir not in sys.path:
     sys.path.insert(0, src_dir)
